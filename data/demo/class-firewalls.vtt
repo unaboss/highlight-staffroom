@@ -1,0 +1,109 @@
+WEBVTT
+
+00:00:05.000 --> 00:00:11.000
+<v Ms Dube>Good morning everyone. Today we're starting firewalls and network segmentation. Can everyone hear me?</v>
+
+00:00:12.000 --> 00:00:14.000
+<v Thabo Mokoena>Yes ma'am, loud and clear.</v>
+
+00:00:15.000 --> 00:00:17.000
+<v Ayesha Patel>Morning, yes we can hear you.</v>
+
+00:01:30.000 --> 00:01:40.000
+<v Ms Dube>Let's start with a question. What does a firewall actually do?</v>
+
+00:01:45.000 --> 00:02:05.000
+<v Thabo Mokoena>It inspects network traffic and decides whether to allow it or block it, based on rules.</v>
+
+00:02:10.000 --> 00:02:20.000
+<v Ms Dube>Exactly. And what does a firewall rule usually match on?</v>
+
+00:02:25.000 --> 00:02:38.000
+<v Thabo Mokoena>The source address, the destination address and the port.</v>
+
+00:02:40.000 --> 00:02:52.000
+<v Ayesha Patel>Does a firewall rule also check the protocol, like TCP or UDP?</v>
+
+00:02:55.000 --> 00:03:20.000
+<v Ms Dube>Great question Ayesha. Yes, the protocol too. Source, destination, protocol and port.</v>
+
+00:05:10.000 --> 00:05:35.000
+<v Ms Dube>There are hardware firewalls that protect a whole network and software firewalls on one computer. Who has seen the Windows firewall? Lerato, have you?</v>
+
+00:05:40.000 --> 00:05:55.000
+<v Ms Dube>Lerato, are you there? Okay, we'll come back to you.</v>
+
+00:07:00.000 --> 00:07:08.000
+<v Sipho Ndlovu>Sorry ma'am, my data was finished. I just joined.</v>
+
+00:07:10.000 --> 00:07:16.000
+<v Ms Dube>No problem Sipho, welcome. We're on firewall rules.</v>
+
+00:07:20.000 --> 00:07:32.000
+<v Sipho Ndlovu>So if the school has a firewall we don't need antivirus, because firewalls block all viruses.</v>
+
+00:07:35.000 --> 00:07:40.000
+<v Ms Dube>Hold that thought, Sipho. Let's look at how the rules work first.</v>
+
+00:10:20.000 --> 00:10:35.000
+<v Ms Dube>Firewall rules are checked from top to bottom. What happens when a rule matches?</v>
+
+00:10:40.000 --> 00:10:55.000
+<v Ayesha Patel>The first rule that matches decides what happens to the traffic.</v>
+
+00:11:00.000 --> 00:11:20.000
+<v Ms Dube>Correct. Now, what do we mean by default deny?</v>
+
+00:11:25.000 --> 00:11:40.000
+<v Thabo Mokoena>Everything is blocked unless a rule specifically allows it.</v>
+
+00:12:00.000 --> 00:12:12.000
+<v Sipho Ndlovu>Ma'am, will this be in the test on Friday? And did you see the game last night?</v>
+
+00:12:15.000 --> 00:12:25.000
+<v Ms Dube>We'll talk about the test at the end, Sipho. Let's stay with firewalls.</v>
+
+00:15:30.000 --> 00:15:45.000
+<v Ms Dube>Let's design the rules for a school web server. Which port should we allow for HTTPS?</v>
+
+00:15:50.000 --> 00:16:00.000
+<v Ayesha Patel>Port 443 for HTTPS traffic.</v>
+
+00:16:05.000 --> 00:16:15.000
+<v Ms Dube>Good. And SSH?</v>
+
+00:16:20.000 --> 00:16:40.000
+<v Thabo Mokoena>Port 22 for SSH, but only from the IT office, and block everything else.</v>
+
+00:16:45.000 --> 00:16:55.000
+<v Sipho Ndlovu>Can my game server use port 80?</v>
+
+00:17:00.000 --> 00:17:15.000
+<v Ms Dube>Port 80 is for HTTP, Sipho, so that's for web traffic.</v>
+
+00:20:00.000 --> 00:20:15.000
+<v Ayesha Patel>Why is it safer to allow SSH only from the IT office?</v>
+
+00:20:30.000 --> 00:20:55.000
+<v Ms Dube>Because every open port is a possible way in for an attacker, so we limit who can reach it.</v>
+
+00:25:00.000 --> 00:25:20.000
+<v Ms Dube>Quick check before we finish. In your own words, what is default deny? Lerato?</v>
+
+00:25:30.000 --> 00:25:45.000
+<v Ms Dube>Lerato, you can type in the chat if your mic isn't working.</v>
+
+00:26:00.000 --> 00:26:15.000
+<v Thabo Mokoena>I can answer. You block all traffic unless a firewall rule allows it.</v>
+
+00:28:40.000 --> 00:28:50.000
+<v Sipho Ndlovu>Ma'am I have to go, my data is running out.</v>
+
+00:35:00.000 --> 00:35:15.000
+<v Ayesha Patel>Is a stateful firewall different from the firewalls we did today?</v>
+
+00:35:20.000 --> 00:35:45.000
+<v Ms Dube>Yes. A stateful firewall keeps track of connections. That's our next lesson.</v>
+
+00:38:00.000 --> 00:38:10.000
+<v Ms Dube>Thank you everyone, see you on Wednesday.</v>
