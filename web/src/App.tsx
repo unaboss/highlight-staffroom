@@ -3,9 +3,10 @@ import Login, { type Role } from "@/pages/Login";
 import Owner from "@/pages/Owner";
 import Facilitator from "@/pages/Facilitator";
 import Learners from "@/pages/Learners";
+import Settings from "@/pages/Settings";
 import Student from "@/pages/Student";
 import { School } from "@/lib/school";
-import { store } from "@/lib/api";
+import { api, store } from "@/lib/api";
 
 const HOME: Record<Role, string> = { owner: "#/school", facilitator: "#/class", student: "#/play" };
 // Same deep link as the plain app: ?role=owner|facilitator|student skips the sign-in.
@@ -33,9 +34,16 @@ export default function App() {
   const hash = useHash();
   const page = (hash.replace(/^#\/?/, "") || "").split("/")[0];
   const role = store("ftn.role") as Role | null;
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    api<{ course: string | null; llm: { online: boolean } }>("/api/health")
+      .then((h) => setStatus(`${h.course || "Staffroom"} · ${h.llm.online ? "model online" : "offline mode"}`)).catch(() => {});
+  }, []);
 
   const atLogin = /\/login\/?$/.test(location.pathname) || page === "login";
-  if (atLogin || !page || !role) {
+  const atSettings = /\/settings\/?$/.test(location.pathname);
+  if (atSettings && role === "student") { location.replace("/fast-track/" + HOME.student); return null; }
+  if (atLogin || ((!page && !atSettings) || !role)) {
     return <Login onEnter={(r) => { store("ftn.role", r); location.href = "/fast-track/" + HOME[r]; }} />;
   }
   return (
@@ -47,16 +55,22 @@ export default function App() {
         </div>
       )}
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-pink-300/15 bg-[#0c0b0e] px-4 py-3 md:px-8">
-        <a href="/fast-track/" className="flex min-w-0 items-center gap-2.5 font-bold tracking-tight" aria-label="Staffroom Fast Track">
-          <img src="/static/ft/mark.svg" alt="" className="size-7 shrink-0" />
-          <span className="truncate">Staffroom <span className="text-pink-400">Fast Track</span></span>
+        <a href="/fast-track/" className="flex min-w-0 items-center gap-3 font-extrabold tracking-tight" aria-label="Staffroom Fast Track">
+          <img src="/static/ft/mark.svg" alt="" className="size-9 shrink-0 md:size-10" />
+          <span className="truncate text-[18px] leading-none sm:text-[21px] md:text-[24px]">Staffroom <span className="text-pink-400">Fast Track</span></span>
         </a>
         <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
           <div className="hidden items-center gap-2 text-sm text-pink-200/75 lg:flex">
             <span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-pink-300 opacity-70" /><span className="relative inline-flex size-2 rounded-full bg-pink-300" /></span>
-            Melsoft · offline mode
+            {status}
           </div>
           <div id="hdr-slot" />
+          {role !== "student" && (
+            <a href="/fast-track/settings" aria-label="Settings" title="Settings"
+              className={"grid size-9 place-items-center rounded-full border text-pink-100 hover:border-pink-300/60 hover:bg-pink-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-300 " + (atSettings ? "border-pink-300/60 bg-pink-500/15" : "border-pink-300/30")}>
+              <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+            </a>
+          )}
           <button type="button" onClick={signOut} aria-label="Sign out"
             className="flex items-center gap-2 rounded-full border border-pink-300/30 bg-transparent px-2.5 py-1.5 text-sm font-semibold text-pink-100 hover:border-pink-300/60 hover:bg-pink-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-300 sm:px-3.5">
             <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg>
@@ -65,7 +79,7 @@ export default function App() {
         </div>
       </header>
       <main className="mx-auto w-full max-w-[1184px] px-5 pb-24 pt-8 md:px-8 md:pt-12">
-        {page === "school" ? <Owner /> : page === "class" ? <Facilitator /> : page === "learners" ? <Learners id={Number(hash.split("/")[2]) || undefined} /> : <Student sub={hash.replace(/^#\/?/, "").split("/").slice(1)} />}
+        {atSettings ? <Settings /> : page === "school" ? <Owner /> : page === "class" ? <Facilitator /> : page === "learners" ? <Learners id={Number(hash.split("/")[2]) || undefined} /> : <Student sub={hash.replace(/^#\/?/, "").split("/").slice(1)} />}
       </main>
     </>
   );

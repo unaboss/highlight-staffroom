@@ -8,6 +8,8 @@ const INK = 0xff9ccb, FILL = 0x0c0b0e, STAFF = 0xe6197f, STAFF2 = 0xff3d9a, CLAS
 const px = (x: number) => (x - 600) / 100;          // flat-drawing pixels -> world units (x)
 const py = (y: number) => (540 - y) / 100;          // flat-drawing pixels -> world units (y, ground at 0)
 
+export const HORIZON = 0.94;                    // where the ground line sits in the canvas (0 top, 1 bottom)
+
 type Win = { mesh: THREE.Mesh; color: number };
 
 export default function School3D({ flash, className, onReady }: { flash: boolean; className?: string; onReady?: () => void }) {
@@ -24,9 +26,12 @@ export default function School3D({ flash, className, onReady }: { flash: boolean
     el.appendChild(renderer.domElement);
     renderer.domElement.style.display = "block";
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
-    camera.position.set(0, 2.4, 17);
-    camera.lookAt(0, 2.25, 0);
+    /* Eye at ground level, looking straight ahead: every point on the ground (y = 0) then lands on
+       one line, the horizon, like the road behind it, so school, steps and trees share the road's
+       ground plane (dev note 13). The frame is shifted so that line sits HORIZON of the way down. */
+    const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 100);
+    camera.position.set(0, 0, 17);
+    camera.lookAt(0, 0, 0);
     const school = new THREE.Group();
     scene.add(school);
 
@@ -125,7 +130,6 @@ export default function School3D({ flash, className, onReady }: { flash: boolean
       add(new THREE.CylinderGeometry(0.03, 0.04, 0.74, 6), x, 0.37, 0.4);
       add(new THREE.IcosahedronGeometry(0.34, 0), x, 1.05, 0.4);
     });
-    line([[-5.7, 0, 1.4], [5.7, 0, 1.4], [-5.7, 0, -1.2], [5.7, 0, -1.2]]);
 
     // draw-in: reveal each line set over 2.4s, staggered
     const totals = lines.map((l) => (l.geometry.index ? l.geometry.index.count : l.geometry.attributes.position.count));
@@ -143,7 +147,8 @@ export default function School3D({ flash, className, onReady }: { flash: boolean
       const w = el.clientWidth, h = el.clientHeight || w * 0.62;
       renderer.setSize(w, h, false);
       renderer.domElement.style.width = "100%"; renderer.domElement.style.height = "100%";
-      camera.aspect = w / h; camera.updateProjectionMatrix();
+      const full = 2 * HORIZON * h;                    // a taller virtual frame centred on the horizon; show its top part
+      camera.aspect = w / full; camera.setViewOffset(w, full, 0, 0, w, h); camera.updateProjectionMatrix();
     };
     resize();
     const ro = new ResizeObserver(resize); ro.observe(el);
@@ -152,9 +157,7 @@ export default function School3D({ flash, className, onReady }: { flash: boolean
     const loop = (now: number) => {
       if (!running) return;
       drawIn(now);
-      const t = now / 1000;
-      if (reduce) { school.rotation.y = 0; school.position.y = 0; }
-      else { school.rotation.y = 0; school.position.y = Math.sin(t * 0.9) * 0.04; }   // faces front and holds still (dev note 1)
+      school.rotation.y = 0; school.position.y = 0;   // faces front and stands on the ground (dev notes 1, 13)
       renderer.render(scene, camera);
       raf = requestAnimationFrame(loop);
     };

@@ -9,23 +9,35 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, Response,
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, db, demo, devnotes, events, facilitate, fasttrack, orchestrator
+from . import __version__, db, demo, devnotes, mode, events, facilitate, fasttrack, orchestrator
 from .agents import librarian, observer, principal
 from .integrations import clickup
 from .integrations.meet import Meet, MeetError
 from .integrations.moodle import Moodle, MoodleError
-from .llm import get_llm
+from .llm import DEFAULT_BASE_URL, DEFAULT_MODEL, get_llm
 
 STATIC = Path(__file__).resolve().parent / "static"
 app = FastAPI(title="Staffroom", version=__version__)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+from . import connectors  # noqa: E402 - Meet, Moodle and ClickUp for Fast Track (/api/connectors, /lms/launch)
+app.include_router(connectors.router)
+
+
+@app.on_event("startup")
+def _bootstrap():
+    mode.bootstrap()                    # demo course + sample class on a fresh or demo deployment
+
+
+def _writable():
+    if mode.public():
+        raise HTTPException(403, "Settings are read-only on this public demo.")
 
 
 @app.middleware("http")
 async def dev_notes_button(request: Request, call_next):
     """Every HTML page gets the floating Note button (one shared script), unless notes are off."""
     resp = await call_next(request)
-    if not devnotes.enabled() or not resp.headers.get("content-type", "").startswith("text/html"):
+    if mode.public() or not devnotes.enabled() or not resp.headers.get("content-type", "").startswith("text/html"):
         return resp
     body = b"".join([chunk async for chunk in resp.body_iterator])
     if b"/static/dev-notes.js" not in body and b"</body>" in body:
@@ -63,6 +75,7 @@ def _react_index():
 @app.get("/fast-track")
 @app.get("/fast-track/")
 @app.get("/fast-track/login")
+@app.get("/fast-track/settings")
 def fast_track_page():
     return _react_index()
 
@@ -85,7 +98,9 @@ def lms_page():
 @app.get("/api/health")
 def health():
     llm = get_llm()
-    return {"ok": True, "version": __version__, "llm": {"online": llm.online, "label": llm.label}}
+    course = db.one("SELECT title FROM courses ORDER BY id LIMIT 1")
+    return {"ok": True, "version": __version__, "llm": {"online": llm.online, "label": llm.label},
+            "mode": {"demo": mode.demo(), "public": mode.public()}, "course": course["title"] if course else None}
 
 
 # ---------------------------------------------------------------- helpers
@@ -98,7 +113,8 @@ def _course(cid: int) -> dict:
 
 
 def _mask(v: str) -> str:
-    return (v[:4] + "•" * 6 + v[-3:]) if v and len(v) > 10 else ("•" * 6 if v else "")
+    """A saved secret is never sent back: at most its first 3 and last 4 characters."""
+    return (v[:3] + "…" + v[-4:]) if v and len(v) >= 16 else ("••••" if v else "")
 
 
 def _integrations(course: dict | None = None) -> dict:
@@ -438,18 +454,162 @@ def get_settings():
 
 @app.post("/api/settings")
 def save_settings(values: dict = Body(...)):
+    _writable()
     for k, v in values.items():
         if k not in SETTING_KEYS:
             continue
         v = (v or "").strip()
-        if k in SECRET_KEYS and (not v or "•" in v):
+        if k in SECRET_KEYS and (not v or "•" in v or "…" in v):
             continue                                  # unchanged masked value
         db.set_setting(k, v)
     return get_settings()
 
 
+# The AI model the agents use. One source of truth: the same nebius_* settings /staffroom writes.
+MODEL_PRESETS = {
+    "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
+    "openai": {"label": "OpenAI", "base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
+    "nebius": {"label": "Nebius", "base_url": DEFAULT_BASE_URL, "model": DEFAULT_MODEL},
+}
+
+
+def _scrub(msg: str, key: str) -> str:
+    """Remove a key (whole, or any long piece of it, or anything shaped like a key) from a provider message."""
+    import re
+    msg = str(msg or "")
+    if key:
+        for n in range(len(key), 7, -1):            # longest pieces first
+            for i in range(0, len(key) - n + 1):
+                if key[i:i + n] in msg:
+                    msg = msg.replace(key[i:i + n], "…")
+    return re.sub(r"(?:sk|gsk|pk|rk)[-_][A-Za-z0-9_\-]{6,}", "…", msg)
+
+
+def _model_settings() -> dict:
+    llm = get_llm()
+    key = db.get_setting("nebius_api_key")
+    provider = next((k for k, v in MODEL_PRESETS.items() if v["base_url"].rstrip("/") == llm.base_url.rstrip("/")), "custom")
+    return {"provider": provider, "base_url": llm.base_url, "model": llm.model, "has_key": bool(key),
+            "key_hint": _mask(key), "online": llm.online, "presets": MODEL_PRESETS, "read_only": mode.public()}
+
+
+@app.get("/api/settings/model")
+def model_settings():
+    return _model_settings()
+
+
+@app.post("/api/settings/model")
+def save_model_settings(values: dict = Body(...)):
+    _writable()
+    preset = MODEL_PRESETS.get(values.get("provider") or "")
+    base = (values.get("base_url") or (preset or {}).get("base_url") or "").strip()
+    model = (values.get("model") or (preset or {}).get("model") or "").strip()
+    if base:
+        db.set_setting("nebius_base_url", base)
+    if model:
+        db.set_setting("nebius_model", model)
+    key = (values.get("api_key") or "").strip()
+    if key and "…" not in key and "•" not in key:
+        db.set_setting("nebius_api_key", key)
+    if values.get("clear_key"):
+        db.set_setting("nebius_api_key", "")
+    return _model_settings()
+
+
+@app.post("/api/settings/model/test")
+def test_model(values: dict = Body(default={})):
+    """One tiny call to the model. Uses the values on the form if given, otherwise the saved ones.
+    Errors come back as the provider's message with any key scrubbed out."""
+    if mode.public():
+        values = {}                     # public demo: only the server's own (env) key can be tested
+    import time as _t
+    from .llm import LLM
+    saved = get_llm()
+    key = (values.get("api_key") or "").strip()
+    if not key or "…" in key or "•" in key:
+        key = saved.api_key
+    llm = LLM(api_key=key, base_url=(values.get("base_url") or saved.base_url).strip(),
+              model=(values.get("model") or saved.model).strip())
+    if not key:
+        return {"ok": False, "error": "No API key saved yet."}
+    t0 = _t.time()
+    try:
+        reply = llm.chat("Reply with the single word OK.", "Say OK.", max_tokens=5, temperature=0)
+    except Exception as e:                                      # noqa: BLE001 - shown to the user
+        return {"ok": False, "error": _scrub(getattr(e, "message", None) or e, key)[:400], "model": llm.model}
+    return {"ok": True, "ms": round((_t.time() - t0) * 1000), "model": llm.model, "reply": (reply or "")[:40]}
+
+
+# Known OpenAI-compatible providers, tried in this order by Detect (a key prefix moves its provider first).
+DETECT_BASES = [("deepseek", "DeepSeek", "https://api.deepseek.com"), ("openai", "OpenAI", "https://api.openai.com/v1"),
+                ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1"), ("groq", "Groq", "https://api.groq.com/openai/v1"),
+                ("nebius", "Nebius", DEFAULT_BASE_URL), ("nebius-studio", "Nebius AI Studio", "https://api.studio.nebius.com/v1")]
+KEY_HINTS = [("sk-or-", "openrouter"), ("gsk_", "groq"), ("sk-proj-", "openai")]
+PREFERRED = ["deepseek-chat", "gpt-4o-mini", "gpt-4.1-mini", "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
+             "deepseek/deepseek-chat", "meta-llama/Llama-3.3-70B-Instruct", DEFAULT_MODEL]
+NOT_FOR_AGENTS = ("reasoner", "embed", "whisper", "tts", "dall-e", "moderation", "audio", "image", "transcribe", "realtime", "search")
+
+
+def _rank_models(ids: list[str]) -> tuple[list[dict], str]:
+    models = [{"id": m, "recommended": not any(x in m.lower() for x in NOT_FOR_AGENTS)} for m in sorted(set(ids))]
+    for m in models:
+        if not m["recommended"]:
+            m["note"] = "not recommended: no JSON mode" if "reasoner" in m["id"].lower() else "not recommended: not a chat model"
+    ok = [m["id"] for m in models if m["recommended"]]
+    pick = next((p for p in PREFERRED if p in ok), None) or next((m for m in ok if "chat" in m or "instruct" in m.lower() or "mini" in m), None)
+    return models, pick or (ok[0] if ok else (models[0]["id"] if models else ""))
+
+
+@app.post("/api/settings/model/detect")
+def detect_model(values: dict = Body(default={})):
+    """Find which provider a key belongs to by listing its models (GET {base}/models, 5 s per probe).
+    The key comes from the form or the saved setting and is never returned or logged."""
+    import httpx
+    key = (values.get("api_key") or "").strip()
+    if not key or "…" in key or "•" in key or mode.public():
+        key = get_llm().api_key
+    if not key:
+        return {"ok": False, "error": "Paste an API key first."}
+    want = values.get("provider") or "auto"
+    bases = DETECT_BASES
+    if want not in ("auto", "custom", ""):
+        bases = [b for b in DETECT_BASES if b[0] == want] or bases
+    elif want == "custom" and values.get("base_url"):
+        bases = [("custom", "Custom", values["base_url"].strip())]
+    else:
+        hint = next((p for pre, p in KEY_HINTS if key.startswith(pre)), None)
+        if hint:
+            bases = sorted(bases, key=lambda b: b[0] != hint)
+    errors = []
+    for pid, label, base in bases:
+        try:
+            r = httpx.get(base.rstrip("/") + "/models", headers={"Authorization": f"Bearer {key}"}, timeout=5)
+        except httpx.HTTPError as e:
+            errors.append(f"{label}: {type(e).__name__}")
+            continue
+        if r.status_code == 200:
+            try:
+                ids = [m.get("id") for m in (r.json().get("data") or []) if m.get("id")]
+            except ValueError:
+                ids = []
+            if pid == "deepseek" and "deepseek-chat" not in ids:
+                ids.append("deepseek-chat")     # DeepSeek's documented chat alias; not always listed
+            models, pick = _rank_models(ids)
+            return {"ok": True, "provider": pid if pid in MODEL_PRESETS else "custom", "label": label,
+                    "base_url": base, "models": models, "default": pick}
+        msg = ""
+        try:
+            body = r.json()
+            msg = (body.get("error") or {}).get("message") if isinstance(body.get("error"), dict) else body.get("error") or body.get("message") or ""
+        except ValueError:
+            msg = r.text[:120]
+        errors.append(f"{label}: {r.status_code} {_scrub(msg, key)[:140]}".strip())
+    return {"ok": False, "error": "No provider accepted this key. " + "; ".join(errors)[:600]}
+
+
 @app.post("/api/settings/clear/{key}")
 def clear_setting(key: str):
+    _writable()
     if key not in SETTING_KEYS:
         raise HTTPException(404)
     db.set_setting(key, "")
@@ -506,7 +666,11 @@ def ft_chapters(cid: int, learner_id: int | None = None):
     _course(cid)
     counts = {r["chapter"]: r["n"] for r in db.q("SELECT chapter, COUNT(*) AS n FROM passages WHERE course_id = ? "
                                                   "GROUP BY chapter", (cid,))}
-    learners = db.q("SELECT id, name FROM learners WHERE course_id = ? ORDER BY id", (cid,))
+    learners = db.q("SELECT id, name, email FROM learners WHERE course_id = ? ORDER BY id", (cid,))
+    for l in learners:                      # the level each profile is on: floors cleared across chapters
+        prog = fasttrack.chapter_progress(l["id"], cid)
+        l["level"] = sum(max([n for n, v in lv.items() if v["passed"] and n <= 10] or [0]) for lv in prog.values())
+        l["sample"] = (l.pop("email") or "").endswith("@sample.demo")
     if learner_id and not any(l["id"] == learner_id for l in learners):
         learner_id = None
     prog = fasttrack.chapter_progress(learner_id, cid) if learner_id else {}
@@ -706,11 +870,13 @@ def demo_file(name: str):
 # --- dev notes: live feedback from the Note button --------------------------------------------
 @app.get("/api/dev-notes")
 def dev_notes_list():
-    return {"enabled": devnotes.enabled(), "notes": devnotes.list_notes()}
+    return {"enabled": devnotes.enabled() and not mode.public(), "notes": devnotes.list_notes()}
 
 
 @app.post("/api/dev-notes")
 def dev_notes_create(data: dict = Body(...)):
+    if mode.public():
+        raise HTTPException(403, "Notes are off on the public demo.")
     try:
         return devnotes.create(data)
     except ValueError as e:

@@ -1,12 +1,13 @@
 /* Student landing: the learner's own tower spinning in 3D, then a scroll into the course drawn as a
    tree (7 modules as branches, 79 chapters as leaves), with what to do next on top. Real data from
    /api/ft/{course}/student/{learner}. */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { api, fmtDate, splitTitle } from "@/lib/api";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { Icon, confetti } from "@/components/ui/kit";
 import { cn } from "@/lib/utils";
+const TowerGL = lazy(() => import("@/components/TowerGL"));
 
 type Chap = { topic_id: number; title: string; top: number; quiz: boolean; taught: boolean; state: "mastered" | "covered" | "missed" | "started" | "taught" | "untaught" };
 type View = {
@@ -92,31 +93,35 @@ function Tower3D({ floors, state, spin }: { floors: number; state: View["state"]
   useEffect(() => { const f = () => setStage(Math.min(400, Math.max(240, innerHeight * 0.44))); addEventListener("resize", f); return () => removeEventListener("resize", f); }, []);
   const fit = Math.min(1, (stage - 70) / towerH);
   return (
-    <div className="relative mx-auto grid h-[clamp(240px,44svh,400px)] w-full max-w-[460px] place-items-center overflow-x-clip [perspective:900px]" role="img"
+    <div className="relative mx-auto grid h-[clamp(240px,44svh,400px)] w-full max-w-[460px] place-items-center overflow-x-clip [perspective:900px]" role="img" style={{ filter: glow }}
       aria-label={`Your tower: ${floors} floor${floors === 1 ? "" : "s"}${state === "done" ? ", flag on top" : ""}`}>
       <div className="absolute bottom-[6%] h-10 w-56 rounded-[50%] bg-pink-500/25 blur-2xl" />
-      <div className="relative [transform-style:preserve-3d]" style={{ width: W, height: towerH, marginTop: 30, filter: glow, scale: String(fit),
-        animation: spin ? "ft-spin 16s linear infinite" : undefined, transform: spin ? undefined : "rotateX(-14deg) rotateY(-32deg)" }}>
-        {Array.from({ length: floors }, (_, i) => {
-          const hex = FLOOR_HUE[Math.min(FLOOR_HUE.length - 1, Math.floor((i / Math.max(1, floors - 1)) * (FLOOR_HUE.length - 1)))];
-          const y = towerH - (i + 1) * H;
-          return (
-            <div key={i} className="absolute left-0 [transform-style:preserve-3d]" style={{ top: y, width: W, height: H }}>
-              <div style={{ ...face(hex, 0.05), transform: `translateZ(${half}px)` }} />
-              <div style={{ ...face(hex, 0.32), transform: `rotateY(180deg) translateZ(${half}px)` }} />
-              <div style={{ ...face(hex, 0.18), transform: `rotateY(90deg) translateZ(${half}px)` }} />
-              <div style={{ ...face(hex, 0.4), transform: `rotateY(-90deg) translateZ(${half}px)` }} />
-              {i === floors - 1 && <div style={{ position: "absolute", width: W, height: W, left: 0, top: (H - W) / 2, background: hex, transform: `rotateX(90deg) translateZ(${H / 2}px)`, boxShadow: "inset 0 0 0 1px rgba(12,11,14,.55)" }} />}
+      <Suspense fallback={
+        <div className="relative [transform-style:preserve-3d]" style={{ width: W, height: towerH, marginTop: 30, filter: glow, scale: String(fit),
+          animation: spin ? "ft-spin 16s linear infinite" : undefined, transform: spin ? undefined : "rotateX(-14deg) rotateY(-32deg)" }}>
+          {Array.from({ length: floors }, (_, i) => {
+            const hex = FLOOR_HUE[Math.min(FLOOR_HUE.length - 1, Math.floor((i / Math.max(1, floors - 1)) * (FLOOR_HUE.length - 1)))];
+            const y = towerH - (i + 1) * H;
+            return (
+              <div key={i} className="absolute left-0 [transform-style:preserve-3d]" style={{ top: y, width: W, height: H }}>
+                <div style={{ ...face(hex, 0.05), transform: `translateZ(${half}px)` }} />
+                <div style={{ ...face(hex, 0.32), transform: `rotateY(180deg) translateZ(${half}px)` }} />
+                <div style={{ ...face(hex, 0.18), transform: `rotateY(90deg) translateZ(${half}px)` }} />
+                <div style={{ ...face(hex, 0.4), transform: `rotateY(-90deg) translateZ(${half}px)` }} />
+                {i === floors - 1 && <div style={{ position: "absolute", width: W, height: W, left: 0, top: (H - W) / 2, background: hex, transform: `rotateX(90deg) translateZ(${H / 2}px)`, boxShadow: "inset 0 0 0 1px rgba(12,11,14,.55)" }} />}
+              </div>
+            );
+          })}
+          {state === "done" && (
+            <div className="absolute left-1/2 [transform-style:preserve-3d]" style={{ top: -58 }}>
+              <div className="h-[58px] w-[3px] -translate-x-1/2 rounded bg-pink-100" />
+              <div className="absolute left-0 top-0 h-[22px] w-[34px] bg-pink-400 shadow-[0_0_18px_#ff3d9a] [clip-path:polygon(0_0,100%_25%,0_55%)]" />
             </div>
-          );
-        })}
-        {state === "done" && (
-          <div className="absolute left-1/2 [transform-style:preserve-3d]" style={{ top: -58 }}>
-            <div className="h-[58px] w-[3px] -translate-x-1/2 rounded bg-pink-100" />
-            <div className="absolute left-0 top-0 h-[22px] w-[34px] bg-pink-400 shadow-[0_0_18px_#ff3d9a] [clip-path:polygon(0_0,100%_25%,0_55%)]" />
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      }>
+        <TowerGL floors={floors} done={state === "done"} spin={spin} className="absolute inset-0" />
+      </Suspense>
       {state === "ahead" && (
         <div className="pointer-events-none absolute left-1/2 [animation:ft-orbit_6s_linear_infinite]" style={{ top: `calc(50% - ${towerH / 2 + 24}px)` }}>
           <span className="grid size-10 -translate-x-1/2 place-items-center rounded-full border border-pink-200/60 bg-pink-500/30 text-pink-100 shadow-[0_0_28px_#ff3d9a]"><Crown className="size-5" /></span>

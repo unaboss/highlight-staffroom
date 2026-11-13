@@ -427,3 +427,80 @@ def test_dev_notes_roundtrip(tmp_path, monkeypatch):
     assert c.get("/api/dev-notes/1/shot.png").headers["content-type"] == "image/png"
     monkeypatch.setenv("STAFFROOM_DEV_NOTES", "0")
     assert b"dev-notes.js" not in c.get("/lms").content               # presentation mode
+
+
+def test_model_settings_never_return_the_key(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    store = {}
+    monkeypatch.setattr(main.db, "get_setting", lambda k, d="": store.get(k) or d)
+    monkeypatch.setattr(main.db, "set_setting", lambda k, v: store.__setitem__(k, v))
+    c = TestClient(main.app)
+    secret = "sk-test-0123456789abcdefa1b2"
+    out = c.post("/api/settings/model", json={"provider": "deepseek", "api_key": secret}).json()
+    assert store["nebius_base_url"] == "https://api.deepseek.com" and store["nebius_model"] == "deepseek-chat"
+    assert store["nebius_api_key"] == secret and out["provider"] == "deepseek" and out["online"]
+    for body in (out, c.get("/api/settings/model").json(), c.get("/api/settings").json()):
+        assert secret not in str(body)
+    assert out["key_hint"] == "sk-…a1b2"
+    # the masked hint sent back unchanged never overwrites the real key
+    c.post("/api/settings/model", json={"api_key": "sk-…a1b2"})
+    c.post("/api/settings", json={"nebius_api_key": "sk-…a1b2"})
+    assert store["nebius_api_key"] == secret
+    # a failing test call reports the provider's error without the key
+    class Boom(Exception):
+        pass
+    def boom(self, *a, **k):
+        raise Boom(f"401 bad key {secret}")
+    monkeypatch.setattr(main.__dict__["get_llm"]().__class__, "chat", boom)
+    r = c.post("/api/settings/model/test", json={}).json()
+    assert r["ok"] is False and secret not in r["error"] and "401" in r["error"]
+
+
+def test_demo_mode_bootstrap_and_public_lockdown(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import db, main, mode
+    monkeypatch.setenv("FASTTRACK_DATA", "demo")
+    monkeypatch.setenv("FASTTRACK_PUBLIC", "1")
+    out = mode.bootstrap()
+    cid = out["course_id"]
+    titles = [t["title"] for t in db.q("SELECT title FROM topics WHERE course_id = ? ORDER BY seq", (cid,))]
+    assert titles[0].startswith("NS-01 T01: ") and len(titles) == 10
+    c = TestClient(main.app)
+    chapters = c.get(f"/api/ft/{cid}/chapters").json()
+    assert len(chapters["chapters"]) == 10                                  # every chapter has passages
+    assert sum(1 for l in chapters["learners"] if l["sample"]) == 10
+    assert mode.bootstrap()["course_id"] == cid                             # runs again without duplicating
+    assert c.post("/api/settings/model", json={"api_key": "x"}).status_code == 403
+    assert c.post("/api/settings", json={"clickup_token": "x"}).status_code == 403
+    assert b"dev-notes.js" not in c.get("/lms").content
+    h = c.get("/api/health").json()
+    assert h["mode"] == {"demo": True, "public": True} and h["course"] == "Network Security Fundamentals"
+
+
+def test_detect_model_finds_provider_and_never_returns_key(monkeypatch):
+    import httpx
+    from fastapi.testclient import TestClient
+    from app import main
+    secret = "sk-test-detect-0123456789wxyz"
+    seen = []
+
+    def fake_get(url, headers=None, timeout=None):
+        seen.append((url, timeout))
+        assert headers["Authorization"] == f"Bearer {secret}"
+        if url.startswith("https://api.deepseek.com"):
+            return httpx.Response(200, json={"data": [{"id": "deepseek-reasoner"}, {"id": "deepseek-chat"}]})
+        return httpx.Response(401, json={"error": {"message": f"Incorrect API key {secret}"}})
+    monkeypatch.setattr(httpx, "get", fake_get)
+    c = TestClient(main.app)
+    d = c.post("/api/settings/model/detect", json={"provider": "auto", "api_key": secret}).json()
+    assert d["ok"] and d["label"] == "DeepSeek" and d["base_url"] == "https://api.deepseek.com"
+    assert d["default"] == "deepseek-chat" and seen[0][1] == 5
+    reasoner = next(m for m in d["models"] if m["id"] == "deepseek-reasoner")
+    assert not reasoner["recommended"] and "not recommended" in reasoner["note"]
+    assert secret not in str(d)
+    # an OpenRouter-style key is tried on OpenRouter first; failures report the provider without the key
+    seen.clear()
+    monkeypatch.setattr(httpx, "get", lambda url, headers=None, timeout=None: (seen.append(url), httpx.Response(401, json={"error": {"message": f"bad key {secret}"}}))[1])
+    r = c.post("/api/settings/model/detect", json={"provider": "auto", "api_key": "sk-or-" + secret}).json()
+    assert not r["ok"] and seen[0].startswith("https://openrouter.ai") and secret not in r["error"]

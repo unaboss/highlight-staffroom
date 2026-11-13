@@ -14,3 +14,6 @@ web/dist/
 screenshots/fast-track-react/
 dev-notes/
 screenshots/
+# imported course notes stay local; only the made-up demo course is tracked
+data/*
+!data/demo/

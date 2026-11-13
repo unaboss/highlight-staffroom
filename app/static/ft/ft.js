@@ -48,7 +48,7 @@ async function api(path, opts = {}) {
   if (!r.ok) throw new Error(body.detail || `Request failed (${r.status})`);
   return body;
 }
-const split = (t) => { const m = /^(KM-\d+)\s+(KT\d+):\s*(.*)$/.exec(t || ""); return m ? { mod: m[1], kt: m[2], name: m[3] } : { mod: "Other", kt: "", name: t || "" }; };
+const split = (t) => { const m = /^([A-Z]{2,4}-\d+)\s+([A-Z]{1,3}\d+):\s*(.*)$/.exec(t || ""); return m ? { mod: m[1], kt: m[2], name: m[3] } : { mod: "Other", kt: "", name: t || "" }; };
 const modHue = (mod) => MOD_HUE[(parseInt(String(mod).replace(/\D/g, ""), 10) || 1) % MOD_HUE.length];
 const cls = (level) => SKILL[S.data?.skills?.[level]] || (level === QUIZ ? "quiz" : "recall");
 const fmtDate = (iso) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "short" }) : "–");

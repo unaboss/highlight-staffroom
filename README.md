@@ -1,8 +1,32 @@
-# Staffroom
+# Staffroom Fast Track
 
-**AI staff for online schools.** Six agents work like the staff of a school. They plan the term against the exam date and write lesson plans from the teacher's own notes. They check every claim before the teacher sees it, read the class recording to see who took part, and draft personal tests. Nothing reaches a learner until the teacher approves it.
+**AI staff for online schools, and a game that gets learners exam-ready.** Six agents work like the staff of a school. They plan the term against the exam date, write lesson plans from the teacher's own notes, check every claim against those notes, read the class recording to see who took part, and draft personal tests. Learners climb a tower of questions built from the same notes, and every question cites the passage it came from. Nothing reaches a learner until the teacher approves it.
 
-Built for **Colleague Zero**, the Melsoft Academy hackathon. The first test site is a cyber security school that teaches on Google Meet and runs exams on Moodle.
+Built for **Colleague Zero**, the Melsoft Academy hackathon.
+
+## What each role sees
+
+**School owner** (`/fast-track/#/school`)
+- Every course at a glance: which will finish before its exam, which are at risk, and why.
+- One school drawing where each course is a column of windows.
+
+**Facilitator** (`/fast-track/#/class`)
+- The course being taught as the headline, the module and section in progress, and days to the exam.
+- *Covered so far*: a route map of the chapters, with a pin where the last class stopped.
+- *Next lesson*: one row with a **View plan** button. The plan cites the notes line by line, shows the Examiner's verdict, and can be printed or approved. After class, record where you stopped.
+- *Exam runway*: one tile per lesson; tiles after the exam flag are striped.
+- *Student plans* (own page): the race, each learner's pace and finish date, topics ready to test, catch-up or early release, learners to check, and class participation from the Meet transcript.
+- *Tests waiting for approval*.
+- **Settings** (gear icon): the AI model and the Google Meet, Moodle and ClickUp connections.
+
+**Student** (`/fast-track/#/play`)
+- A 3D tower of the floors they have built, ahead / behind / done, and a **Begin Fast Track cycle** button.
+- Scroll down into the course as a tree; each chapter is a ten-floor climb plus a final quiz.
+- Every question is five-a-floor, cites a passage, and asks how sure you are first. Time runs out → a full-screen *Time's up* and the passage it came from.
+
+**Demo LMS** (`/lms`): a separate Moodle-style site showing how Fast Track sits inside a school's own LMS.
+
+**Classic Staffroom** (`/staffroom`): the original agent dashboard with the live hand-off board.
 
 ## The staff
 
@@ -27,42 +51,72 @@ Built for **Colleague Zero**, the Melsoft Academy hackathon. The first test site
 
 ## Run it
 
-You need Python 3.10 or newer.
+You need **Python 3.10+** and, to build the React app, **Node 20+**.
 
-**Windows:** double-click `run.bat`. It opens http://localhost:8000.
+**Windows:** double-click `run.bat`. It installs what it needs, builds the app the first time, and opens http://localhost:8001. `run.bat present` hides the dev Note button for presenting.
 
-**macOS / Linux:**
+**By hand (any OS):**
 ```sh
-./run.sh
-```
-
-**By hand:**
-```sh
-python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
+python -m venv .venv
+. .venv/bin/activate                 # Windows: .venv\Scriptsctivate
 pip install -r requirements.txt
-uvicorn app.main:app --port 8000
+cd web && npm install && npm run build && cd ..
+uvicorn app.main:app --port 8001
 ```
+Open http://localhost:8001 and pick a role. There is no sign-up.
 
-**Docker:**
+**Docker** (builds the React app and the server in one image):
 ```sh
 docker build -t staffroom .
-docker run -p 8000:8000 -v staffroom:/data staffroom
+docker run -p 8000:8000 -e PORT=8000 -v staffroom:/data staffroom
 ```
 
-With no model key it runs in **offline mode**. The staff draft straight from the notes and check with rules in code, so the whole demo works without a network. Add a key in Settings, or in a `.env` file (copy `.env.example`), to use a model.
+### Deploy anywhere that runs Docker
 
-## Demo script (about 2 minutes)
+```sh
+docker build -t staffroom .
+docker run -p 8000:8000 -e PORT=8000 staffroom
+```
 
-1. **Home → Run the demo.** This loads the demo course, *Network Security Fundamentals*. The class is two lessons behind, and today's lesson is Firewalls.
-2. **Staffroom.** Watch the agents hand off at reading speed. The Librarian finds passages, the Subject Teacher drafts, and the Examiner marks. Then the class recording is read: Thabo and Ayesha are active, Lerato was silent, Sipho left early, and Kagiso was absent. The Examiner catches Sipho saying "firewalls block all viruses". The Counsellor flags three learners, and three tests wait for approval.
-3. **Course plan.** The Principal's forecast shows two lessons that won't fit before the exam, with a line drawn at the exam date. Open today's lesson and click a **P1** chip to see the passage. Then type *Firewalls block all viruses* into **Try to trick the Examiner**.
-4. **Class report.** Click Sipho to highlight his lines. **Things to revisit** shows his wrong idea next to what the notes actually say.
-5. **Tests.** Sipho's test opens with a question about what he said in class. Every memo answer cites the notes. Click **Approve and release**.
-6. **Learners.** The mastery heatmap shows the class at a glance.
+Health check: `GET /api/health` (returns `{"ok": true, ...}`). The first start loads the demo course in about 20 seconds.
 
-**Replay the demo** rebuilds only the demo course. Courses you create yourself are never touched.
+| Variable | Default in the image | What it does |
+|---|---|---|
+| `PORT` | `8000` | Port the server listens on |
+| `FASTTRACK_DATA` | `demo` | `demo` loads only the made-up demo course and the labelled sample learners |
+| `FASTTRACK_PUBLIC` | `1` | Settings are read-only, keys come only from env vars, and the Note button is off |
+| `STAFFROOM_DEV_NOTES` | `0` | The dev Note button (off in public deploys) |
+| `STAFFROOM_DB` | `/data/staffroom.db` | SQLite file; mount a volume at `/data` to keep it between restarts |
+| `NEBIUS_API_KEY` | *(empty: offline mode)* | Optional API key for any OpenAI-compatible model (the name is historical) |
+| `NEBIUS_BASE_URL` | Nebius | Optional base URL, e.g. `https://api.deepseek.com` |
+| `NEBIUS_MODEL` | Nemotron | Optional model, e.g. `deepseek-chat` |
 
-## Connect your school (Settings)
+Without `NEBIUS_API_KEY` the public demo runs in offline mode, so visitors can't spend anyone's model credit.
+
+### Deploy on Render (free)
+
+The repo has a `render.yaml` blueprint: a free Docker web service from the `fast-track` branch, health check `/api/health`, public demo mode on. In Render choose **New → Blueprint**, pick this repository, and deploy. The first start loads the demo course in about 20 seconds.
+
+### Demo data or your own notes
+
+- **Demo mode** (`FASTTRACK_DATA=demo`, and the default on an empty database): a made-up course, *Network Security Fundamentals*, from `data/demo/`, plus ten labelled sample learners (Sample 1 to Sample 10) and one sample class run through the agents. Nothing else is loaded.
+- **Public mode** (`FASTTRACK_PUBLIC=1`): Settings are read-only and keys can only come from environment variables, and the Note button is off. The Docker image and `render.yaml` turn this on.
+- **Your own notes:** import Word, Markdown, text or PDF notes into a course, then add the sample class if you want one:
+  ```sh
+  python -m tools.import_notes "C:/path/to/notes" --course "My course" --out data/my-course
+  python -m tools.seed_sample_class --course "My course"          # --remove takes it out again
+  ```
+  Everything under `data/` except `data/demo/` is git-ignored, so imported notes and the database stay on your machine.
+
+### Use a model (DeepSeek or any OpenAI-compatible API)
+
+Without a key the agents run in **offline mode**: they draft straight from the notes and check with rules in code, so the whole demo works with no network.
+
+To use a model, open **Settings** (gear icon, owner or facilitator), pick **DeepSeek** (base URL `https://api.deepseek.com`, model `deepseek-chat`), paste the key, **Save**, then **Test connection**. Use `deepseek-chat`; `deepseek-reasoner` doesn't support the JSON replies the agents rely on. OpenAI and Nebius presets work the same way, and **Custom** takes any OpenAI-compatible base URL.
+
+On a server, set the key as environment variables instead: `NEBIUS_API_KEY`, `NEBIUS_BASE_URL` and `NEBIUS_MODEL` (the names are historical; any provider works). The app never sends a saved key back to the browser; it shows only its first three and last four characters.
+
+## Connections (Settings)
 
 | Service | What you give it | What Staffroom does |
 |---|---|---|
@@ -72,9 +126,7 @@ With no model key it runs in **offline mode**. The staff draft straight from the
 | **Moodle** | Site URL and a web service token | Imports the class list (`core_enrol_get_enrolled_users`) |
 | **Notes** | Markdown, text or PDF | The Librarian splits it into passages by chapter, section and page |
 
-You can upload a transcript (`.vtt`) and a register (`.csv` with name, joined, left) on the Class report page instead of using Meet. The demo files are linked at the top of that page.
-
-**New course:** Settings → New course. Write the syllabus one topic per line, like `1. Reconnaissance (90 min) | keywords: OSINT, whois`. With a model, any format works. Then upload your notes.
+You can upload a transcript (`.vtt`) and a register (`.csv` with name, joined, left) in the classic Staffroom instead of using Meet.
 
 ## How it's built
 
@@ -95,6 +147,8 @@ data/demo/     course, syllabus, notes, learners, quiz marks, recorded class
 tests/         offline tests, including a fake model for the send-back loop
 ```
 
+- **Fast Track** is a React 19 + Vite + Tailwind app in `web/`, built to `web/dist` and served by FastAPI at `/fast-track`. The 3D school and tower use three.js.
+
 ## Tests
 
 ```sh
@@ -102,7 +156,7 @@ pip install -r requirements.txt
 python -m pytest -q
 ```
 
-The tests run offline. They cover the parsers and the Examiner, run the whole demo story end to end, and check that re-planning keeps taught lessons in place. A fake model slips an unsupported claim into a lesson to prove the Examiner sends it back. The ClickUp and Meet request shapes are checked against a mock transport.
+The tests run offline. They cover the parsers and the Examiner, run the whole demo story end to end, check that re-planning keeps taught lessons in place, and check that the settings API never returns a saved key. A fake model slips an unsupported claim into a lesson to prove the Examiner sends it back.
 
 ## Privacy
 

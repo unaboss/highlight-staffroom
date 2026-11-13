@@ -604,6 +604,11 @@ def record(learner_id: int, topic_id: int, level: int, answers: list[dict], toda
     db.insert("scores", learner_id=learner_id, topic_id=topic_id, kind=kind, score=correct, max=total,
               taken_on=today.isoformat())
     mastery = update_mastery(learner_id, topic_id)
+    try:                                    # final quiz: grade to the LMS, close the ClickUp follow-up
+        from . import connectors
+        connectors.on_result(learner_id, topic_id, level, correct, total, passed)
+    except Exception:                       # noqa: BLE001 - connectors never block a student's result
+        pass
     return {"correct": correct, "total": total, "passed": passed, "stars": stars, "xp": xp,
             "stats": learner_stats(learner_id), "mastery": mastery}
 

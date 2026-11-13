@@ -1,0 +1,22 @@
+# Render blueprint: a free web service built from the Dockerfile on the fast-track branch.
+# Public demo mode: the made-up demo course only, read-only settings, no Note button.
+# To let the agents use a model, add NEBIUS_API_KEY (any OpenAI-compatible key), NEBIUS_BASE_URL and
+# NEBIUS_MODEL as secret env vars in the Render dashboard. They are never shown in the app.
+services:
+  - type: web
+    name: staffroom-fast-track
+    runtime: docker
+    plan: free
+    branch: fast-track
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: FASTTRACK_DATA
+        value: demo
+      - key: FASTTRACK_PUBLIC
+        value: "1"
+      - key: STAFFROOM_DEV_NOTES
+        value: "0"
+      - key: STAFFROOM_DB
+        value: /tmp/staffroom.db

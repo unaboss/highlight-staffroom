@@ -17,7 +17,7 @@ const SURE: [string, string][] = [["guess", "Guessing"], ["fair", "Fairly sure"]
 const SURE_X: Record<string, number> = { guess: 0.5, fair: 1, certain: 1.5 };
 
 type Chapter = { id: number; seq: number; title: string; passages: number; mastery: number | null; levels: Record<string, { best: number; total: number; stars: number; passed: boolean }> };
-type Data = { course: string; learners: { id: number; name: string }[]; learner_id: number | null; stats: any; chapters: Chapter[]; skills: Record<string, string>; blurbs: Record<string, string> };
+type Data = { course: string; learners: { id: number; name: string; level?: number; sample?: boolean }[]; learner_id: number | null; stats: any; chapters: Chapter[]; skills: Record<string, string>; blurbs: Record<string, string> };
 type Q = any;
 type Run = { level: number; data: any; i: number; answers: { ok: boolean; sure: string; xp: number }[]; xp: number; streak: number };
 
@@ -65,19 +65,20 @@ export default function Student({ sub }: { sub: string[] }) {
 }
 
 /** "Playing as NAME" chip in the header; switching learner is a small menu, no new page, no password. */
-function PlayingAs({ me, learners, onPick }: { me: string; learners: { id: number; name: string }[]; onPick: (id: number) => void }) {
+function PlayingAs({ me, learners, onPick }: { me: string; learners: Data["learners"]; onPick: (id: number) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
       <button onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="listbox"
         className="flex items-center gap-1.5 rounded-full border border-pink-300/25 bg-white/5 px-3 py-1 text-[13px] font-semibold text-pink-100 hover:border-pink-300/50">
-        Playing as <span className="text-pink-300">{me.replace(" (sample)", "")}</span><span aria-hidden="true">▾</span>
+        <span className="hidden sm:inline">Playing as</span> <span className="text-pink-300">{me.replace(" (sample)", "")}</span><span aria-hidden="true">▾</span>
       </button>
       {open && (
         <ul role="listbox" className="glass absolute right-0 top-full z-30 mt-2 max-h-72 min-w-[200px] overflow-auto p-1.5">
           {learners.map((l) => (
             <li key={l.id}><button role="option" aria-selected={l.name === me} onClick={() => { setOpen(false); onPick(l.id); }}
-              className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-pink-500/15">{l.name.replace(" (sample)", "")}{/\(sample\)/.test(l.name) && <span className="ml-1.5 text-xs text-pink-200/60">sample</span>}</button></li>
+              className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-sm hover:bg-pink-500/15">
+              <span>{l.name.replace(" (sample)", "")}</span><span className="font-mono text-xs text-pink-300">Level {l.level ?? 0}</span></button></li>
           ))}
         </ul>
       )}
@@ -87,7 +88,7 @@ function PlayingAs({ me, learners, onPick }: { me: string; learners: { id: numbe
 
 function Who({ data, cid, onPick }: { data: Data; cid: number; onPick: (id: number) => void }) {
   const [name, setName] = useState("");
-  const people = data.learners.filter((l) => !/\(sample\)/.test(l.name));
+  const people = data.learners.filter((l) => !l.sample && !/\(sample\)/.test(l.name));
   return (
     <SpotlightCard className="mx-auto mt-[6vh] max-w-[520px] p-8">
       <h1 className="text-h2">Who's climbing?</h1>

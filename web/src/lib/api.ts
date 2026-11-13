@@ -41,6 +41,6 @@ export const fmtDate = (iso?: string | null) =>
   iso ? new Date(iso + "T00:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "short" }) : "–";
 
 export const splitTitle = (t: string) => {
-  const m = /^(KM-\d+)\s+(KT\d+):\s*(.*)$/.exec(t || "");
+  const m = /^([A-Z]{2,4}-\d+)\s+([A-Z]{1,3}\d+):\s*(.*)$/.exec(t || "");
   return m ? { mod: m[1], kt: m[2], name: m[3] } : { mod: "Other", kt: "", name: t || "" };
 };

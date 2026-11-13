@@ -44,10 +44,12 @@ async function ft() {
   S.ftCourse = c;
   S.board = await api(`/api/ft/${c.id}/board`);
   S.topics = S.board.topics;
+  // The student launch is a signed link (like an LTI launch): Fast Track opens already signed in.
+  try { S.launch = (await api(`/api/connectors/moodle/launch-link?course_id=${c.id}`)).url; } catch { S.launch = null; }
   return S.board;
 }
-const ftLink = (role) => `/fast-track?role=${role}`;
-const modOf = (t) => (/^(KM-\d+)/.exec(t) || [])[1] || "Other";
+const ftLink = (role) => (role === "student" && S.launch) || `/fast-track?role=${role}`;
+const modOf = (t) => (/^([A-Z]{2,4}-\d+)\s/.exec(t) || [])[1] || "Other";
 // Stable placeholder marks per learner and item.
 const mark = (name, k, lo = 48, hi = 92) => { let h = 7; for (const ch of name + k) h = (h * 31 + ch.charCodeAt(0)) % 9973; return lo + (h % (hi - lo)); };
 

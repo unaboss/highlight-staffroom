@@ -1,0 +1,15 @@
+# Keep private and bulky things out of the image
+.git
+.venv
+**/__pycache__
+**/node_modules
+web/dist
+data/*
+!data/demo
+dev-notes
+screenshots
+tests
+.env
+.env.*
+!.env.example
+*.db
