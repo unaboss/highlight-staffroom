@@ -5,11 +5,11 @@ import queue
 from datetime import date
 from pathlib import Path
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, db, demo, events, orchestrator
+from . import __version__, db, demo, devnotes, events, facilitate, fasttrack, orchestrator
 from .agents import librarian, observer, principal
 from .integrations import clickup
 from .integrations.meet import Meet, MeetError
@@ -20,13 +20,66 @@ STATIC = Path(__file__).resolve().parent / "static"
 app = FastAPI(title="Staffroom", version=__version__)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
+
+@app.middleware("http")
+async def dev_notes_button(request: Request, call_next):
+    """Every HTML page gets the floating Note button (one shared script), unless notes are off."""
+    resp = await call_next(request)
+    if not devnotes.enabled() or not resp.headers.get("content-type", "").startswith("text/html"):
+        return resp
+    body = b"".join([chunk async for chunk in resp.body_iterator])
+    if b"/static/dev-notes.js" not in body and b"</body>" in body:
+        body = body.replace(b"</body>", devnotes.script_tag() + b"</body>", 1)
+    headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "etag")}
+    return Response(body, status_code=resp.status_code, headers=headers, media_type=resp.media_type)
+
+# Fast Track is the React app in web/ (build it with `npm run build` there). Its assets live under
+# /fast-track/assets; the earlier plain-JS app stays reachable at /fast-track-classic as a fallback.
+WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
+app.mount("/fast-track/assets", StaticFiles(directory=WEB_DIST / "assets", check_dir=False), name="fast-track-assets")
+
 SECRET_KEYS = {"nebius_api_key", "clickup_token", "google_access_token", "moodle_token"}
 SETTING_KEYS = SECRET_KEYS | {"nebius_base_url", "nebius_model", "clickup_team_id", "moodle_url", "as_of_date"}
 
 
 @app.get("/")
 def home():
+    return RedirectResponse("/fast-track/login")
+
+
+@app.get("/staffroom")
+def staffroom_board():
+    """The original teacher dashboard (agents board, course plan, class report)."""
     return FileResponse(STATIC / "index.html")
+
+
+def _react_index():
+    index = WEB_DIST / "index.html"
+    if not index.is_file():   # not built yet: fall back to the classic app rather than a 404
+        return RedirectResponse("/fast-track-classic")
+    return FileResponse(index, headers={"Cache-Control": "no-cache"})   # always pick up a new build
+
+
+@app.get("/fast-track")
+@app.get("/fast-track/")
+@app.get("/fast-track/login")
+def fast_track_page():
+    return _react_index()
+
+
+@app.get("/fast-track-classic")
+def fast_track_classic():
+    return FileResponse(STATIC / "ft" / "index.html")
+
+
+@app.get("/fast-track-classic/login")
+def fast_track_classic_login():
+    return FileResponse(STATIC / "ft" / "login.html")
+
+
+@app.get("/lms")
+def lms_page():
+    return FileResponse(STATIC / "lms" / "index.html")
 
 
 @app.get("/api/health")
@@ -439,6 +492,143 @@ def stream():
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+# ---------------------------------------------------------------- Fast Track (student game)
+
+@app.get("/api/ft/courses")
+def ft_courses():
+    return db.q("SELECT c.id, c.title, COUNT(DISTINCT t.id) AS chapters FROM courses c "
+                "JOIN topics t ON t.course_id = c.id WHERE EXISTS (SELECT 1 FROM passages p WHERE p.course_id = c.id) "
+                "GROUP BY c.id ORDER BY c.id DESC")
+
+
+@app.get("/api/ft/{cid}/chapters")
+def ft_chapters(cid: int, learner_id: int | None = None):
+    _course(cid)
+    counts = {r["chapter"]: r["n"] for r in db.q("SELECT chapter, COUNT(*) AS n FROM passages WHERE course_id = ? "
+                                                  "GROUP BY chapter", (cid,))}
+    learners = db.q("SELECT id, name FROM learners WHERE course_id = ? ORDER BY id", (cid,))
+    if learner_id and not any(l["id"] == learner_id for l in learners):
+        learner_id = None
+    prog = fasttrack.chapter_progress(learner_id, cid) if learner_id else {}
+    mastery = {m["topic_id"]: m["level"] for m in db.q("SELECT topic_id, level FROM mastery WHERE learner_id = ?",
+                                                       (learner_id,))} if learner_id else {}
+    chapters = [{"id": t["id"], "seq": t["seq"], "title": t["title"], "passages": counts.get(t["title"], 0),
+                 "levels": prog.get(t["id"], {}), "mastery": mastery.get(t["id"])}
+                for t in db.q("SELECT * FROM topics WHERE course_id = ? ORDER BY seq", (cid,))]
+    return {"course": _course(cid)["title"], "learners": learners, "learner_id": learner_id,
+            "stats": fasttrack.learner_stats(learner_id) if learner_id else None,
+            "chapters": [c for c in chapters if c["passages"]], "skills": fasttrack.SKILLS,
+            "blurbs": fasttrack.LEVEL_BLURB, "quiz_level": fasttrack.QUIZ_LEVEL}
+
+
+@app.get("/api/ft/{cid}/board")
+def ft_board(cid: int):
+    """Class view for the facilitator and the LMS gradebook: each learner's climb, XP and quiz marks."""
+    _course(cid)
+    fasttrack.ensure_tables()
+    topics = db.q("SELECT id, seq, title FROM topics WHERE course_id = ? ORDER BY seq", (cid,))
+    out = []
+    for l in db.q("SELECT id, name, email FROM learners WHERE course_id = ? ORDER BY id", (cid,)):
+        prog = fasttrack.chapter_progress(l["id"], cid)
+        st = fasttrack.learner_stats(l["id"])
+        chapters = {}
+        for tid, lv in prog.items():
+            top = max([n for n, v in lv.items() if v["passed"] and n <= 10] or [0])
+            q = lv.get(fasttrack.QUIZ_LEVEL)
+            chapters[tid] = {"top": top, "quiz": round(100 * q["best"] / q["total"]) if q and q["total"] else None}
+        out.append({"id": l["id"], "name": l["name"], "sample": (l["email"] or "").endswith("@sample.demo"),
+                    "xp": st["xp"], "streak": st["streak"], "best_streak": st["best_streak"],
+                    "answered": st["answered"], "correct": st["correct"], "sure_wrong": st["sure_wrong"],
+                    "sure_right": st["sure_right"], "levels": sum(c["top"] for c in chapters.values()),
+                    "chapters": chapters,
+                    "mastery": {m["topic_id"]: m["level"] for m in db.q(
+                        "SELECT topic_id, level FROM mastery WHERE learner_id = ?", (l["id"],))}})
+    return {"topics": topics, "learners": out}
+
+
+@app.get("/api/ft/{cid}/facilitator")
+def ft_facilitator(cid: int):
+    """Coverage, where the class stopped, the next lesson, and each learner's track plan."""
+    _course(cid)
+    return facilitate.summary(cid)
+
+
+@app.get("/api/ft/{cid}/student/{lid}")
+def ft_student(cid: int, lid: int):
+    """The student landing: how far through, what was missed, what to do next, what is ready to test."""
+    _course(cid)
+    if not db.one("SELECT 1 FROM learners WHERE id = ? AND course_id = ?", (lid, cid)):
+        raise HTTPException(404, "Learner not found")
+    return facilitate.student_view(cid, lid)
+
+
+@app.post("/api/lessons/{lid}/progress")
+def lesson_progress(lid: int, stopped_section: str | None = Body(None, embed=True), finished: bool = Body(False, embed=True)):
+    """Record where today's class stopped. A finished lesson counts as taught."""
+    l = db.one("SELECT course_id FROM lessons WHERE id = ?", (lid,))
+    if not l:
+        raise HTTPException(404, "Lesson not found")
+    return facilitate.record_progress(lid, stopped_section, finished, principal.today_for(l["course_id"]))
+
+
+@app.post("/api/lessons/{lid}/approve")
+def lesson_approve(lid: int):
+    l = db.one("SELECT course_id FROM lessons WHERE id = ?", (lid,))
+    if not l:
+        raise HTTPException(404, "Lesson not found")
+    try:
+        return facilitate.approve_plan(lid, principal.today_for(l["course_id"]))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/ft/{cid}/actions")
+def ft_action(cid: int, learner_id: int = Body(..., embed=True), kind: str = Body(..., embed=True),
+              detail: dict = Body({}, embed=True)):
+    """Queue a pace-based action (catch-up path or early release). It waits for teacher approval."""
+    _course(cid)
+    if not db.one("SELECT 1 FROM learners WHERE id = ? AND course_id = ?", (learner_id, cid)):
+        raise HTTPException(404, "Learner not found")
+    try:
+        return {"action_id": facilitate.queue_action(cid, learner_id, kind, detail), "status": "Pending approval"}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/ft/{cid}/learner")
+def ft_learner(cid: int, name: str = Body(..., embed=True)):
+    _course(cid)
+    name = name.strip()[:60]
+    if not name:
+        raise HTTPException(400, "Type your name")
+    have = db.one("SELECT id FROM learners WHERE course_id = ? AND lower(name) = lower(?)", (cid, name))
+    lid = have["id"] if have else db.insert("learners", course_id=cid, name=name, email="", consent=1)
+    return {"learner_id": lid, "name": name}
+
+
+@app.get("/api/ft/topic/{tid}/level/{level}")
+def ft_level(tid: int, level: int, seed: int = 0):
+    if not 1 <= level <= fasttrack.QUIZ_LEVEL:
+        raise HTTPException(404, "No such level")
+    out = fasttrack.build_level(tid, level, seed)
+    if not out:
+        raise HTTPException(404, "Chapter not found")
+    if not out["questions"]:
+        raise HTTPException(400, "This chapter is too short to build questions from")
+    return out
+
+
+@app.post("/api/ft/topic/{tid}/level/{level}/result")
+def ft_result(tid: int, level: int, learner_id: int = Body(..., embed=True), answers: list[dict] = Body(..., embed=True)):
+    t = db.one("SELECT * FROM topics WHERE id = ?", (tid,))
+    l = db.one("SELECT * FROM learners WHERE id = ?", (learner_id,))
+    if not t or not l or l["course_id"] != t["course_id"]:
+        raise HTTPException(404, "Learner or chapter not found")
+    if not 1 <= level <= fasttrack.QUIZ_LEVEL or not answers:
+        raise HTTPException(400, "Nothing to save")
+    return fasttrack.record(learner_id, tid, level, answers, principal.today_for(t["course_id"]))
+
+
 # ---------------------------------------------------------------- demo
 
 def _delete_course(cid: int) -> None:
@@ -511,3 +701,44 @@ def demo_file(name: str):
     if name not in allowed:
         raise HTTPException(404)
     return FileResponse(demo.DEMO / name, filename=name)
+
+
+# --- dev notes: live feedback from the Note button --------------------------------------------
+@app.get("/api/dev-notes")
+def dev_notes_list():
+    return {"enabled": devnotes.enabled(), "notes": devnotes.list_notes()}
+
+
+@app.post("/api/dev-notes")
+def dev_notes_create(data: dict = Body(...)):
+    try:
+        return devnotes.create(data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/dev-notes/{nid}")
+def dev_notes_get(nid: int):
+    n = devnotes.get(nid)
+    if not n:
+        raise HTTPException(404, "No such note")
+    return n
+
+
+@app.patch("/api/dev-notes/{nid}")
+def dev_notes_update(nid: int, data: dict = Body(...)):
+    try:
+        n = devnotes.update(nid, data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not n:
+        raise HTTPException(404, "No such note")
+    return n
+
+
+@app.get("/api/dev-notes/{nid}/shot.png")
+def dev_notes_shot(nid: int):
+    p = devnotes.shot_path(nid)
+    if not p:
+        raise HTTPException(404, "No screenshot")
+    return FileResponse(p, media_type="image/png", headers={"Cache-Control": "no-cache"})

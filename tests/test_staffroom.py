@@ -308,3 +308,122 @@ def test_meet_class_data_builds_entries_and_register():
     entries, attendance, rec = meet.class_data("abc-defg-hij")
     assert entries[0]["speaker"] == "Thabo Mokoena" and entries[0]["start"] == 60.0
     assert attendance[0]["minutes"] == 40.0
+
+
+def test_fast_track_ladder_cites_and_saves_mastery():
+    from app import fasttrack
+    from app.agents import librarian
+    cid = db.insert("courses", title="FT", subject="", grade="", curriculum="", teacher="", term_start="2026-11-01",
+                    exam_date="2027-03-01", slot_days="[0]", slot_minutes=45)
+    text = (demo.DEMO / "notes" / "network-security-fundamentals.md").read_text(encoding="utf-8")
+    chapter = text.splitlines()[0].lstrip("# ").strip()
+    librarian.ingest_file(cid, "notes.md", text.encode("utf-8"))
+    tid = db.insert("topics", course_id=cid, seq=1, title=chapter, minutes=45, keywords="")
+    lid = db.insert("learners", course_id=cid, name="Test", email="", consent=1)
+    _, passages = fasttrack.chapter_passages(tid)
+    texts = {p["n"]: p["text"] for p in passages}
+    for level in range(1, fasttrack.QUIZ_LEVEL + 1):
+        out = fasttrack.build_level(tid, level, seed=1)
+        assert out["questions"], level
+        for q in out["questions"]:
+            assert q["cites"]
+            for c in q["cites"]:
+                assert c["sentence"] in texts[c["n"]]
+    res = fasttrack.record(lid, tid, 1, [{"ok": True, "xp": 10, "sure": "certain"}] * 5, TODAY)
+    assert res["passed"] and res["stars"] == 3
+    assert db.one("SELECT level FROM mastery WHERE learner_id = ? AND topic_id = ?", (lid, tid))["level"] == 1
+
+
+def test_fast_track_serves_react_build_and_classic_fallback():
+    from fastapi.testclient import TestClient
+    from app import main
+    client = TestClient(main.app)
+    if not (main.WEB_DIST / "index.html").is_file():
+        pytest.skip("React build missing: run `npm run build` in web/")
+    for path in ("/fast-track", "/fast-track/login"):
+        r = client.get(path)
+        assert r.status_code == 200 and 'id="root"' in r.text and "/fast-track/assets/" in r.text
+    asset = re.search(r'/fast-track/assets/[^"]+\.js', client.get("/fast-track").text).group(0)
+    js = client.get(asset).text
+    assert "Sign out" in js                      # one way out, back to the login
+    assert '"aria-label":"View"' not in js        # no in-page role switcher
+    classic = client.get("/fast-track-classic")
+    assert classic.status_code == 200 and "Staffroom Fast Track" in classic.text
+    assert client.get("/fast-track-classic/login").status_code == 200
+    assert client.get("/", follow_redirects=False).headers["location"] == "/fast-track/login"
+
+
+def test_facilitator_summary_progress_approval_and_actions():
+    from fastapi.testclient import TestClient
+    from app import main, fasttrack
+    from app.agents import librarian
+    client = TestClient(main.app)
+    text = (demo.DEMO / "notes" / "network-security-fundamentals.md").read_text(encoding="utf-8")
+    cid = db.insert("courses", title="FT2", subject="", grade="", curriculum="", teacher="", term_start="2026-11-01",
+                    exam_date="2027-03-01", slot_days="[0,2,4]", slot_minutes=45)
+    librarian.ingest_file(cid, "notes.md", text.encode("utf-8"))
+    chapters = [r["chapter"] for r in db.q("SELECT DISTINCT chapter FROM passages WHERE course_id = ? ORDER BY id", (cid,))]
+    tids = [db.insert("topics", course_id=cid, seq=i, title=c, minutes=45, keywords="") for i, c in enumerate(chapters[:3], 1)]
+    lids = [db.insert("lessons", course_id=cid, seq=i, topic_id=t, part=1, parts=1, title=chapters[i - 1],
+                      planned_date="2026-11-16", minutes=45, status="Planned") for i, t in enumerate(tids, 1)]
+    lid = db.insert("learners", course_id=cid, name="Test", email="", consent=1)
+
+    s = client.get(f"/api/ft/{cid}/facilitator").json()
+    assert s["coverage"]["pct"] == 0 and s["stopped"] is None and s["next"]["lesson_id"] == lids[0]
+
+    sec = s["next"]["sections"][0]
+    client.post(f"/api/lessons/{lids[0]}/progress", json={"stopped_section": sec, "finished": False})
+    s = client.get(f"/api/ft/{cid}/facilitator").json()
+    assert s["stopped"]["section"] == sec and not s["stopped"]["finished"]
+    assert s["next"]["lesson_id"] == lids[0] and s["next"]["continues_from"] == sec
+    assert 0 < s["coverage"]["pct"] < 100
+    assert tids[0] in [r["topic_id"] for r in s["tracks"][0]["ready"]]          # covered in class -> ready to test
+
+    client.post(f"/api/lessons/{lids[0]}/progress", json={"finished": True})
+    s = client.get(f"/api/ft/{cid}/facilitator").json()
+    assert s["stopped"]["finished"] and s["next"]["lesson_id"] == lids[1]
+
+    assert client.post(f"/api/lessons/{lids[1]}/approve").status_code == 400  # no plan yet
+    db.update("lessons", lids[1], plan_json=db.dumps({"objectives": []}))
+    assert client.post(f"/api/lessons/{lids[1]}/approve").json()["approved"]
+    assert client.get(f"/api/ft/{cid}/facilitator").json()["next"]["approved"]
+
+    fasttrack.record(lid, tids[1], 1, [{"ok": True, "xp": 10, "sure": "fair"}] * 5, TODAY)
+    fasttrack.record(lid, tids[1], 2, [{"ok": True, "xp": 10, "sure": "fair"}] * 5, TODAY)
+    tr = client.get(f"/api/ft/{cid}/facilitator").json()["tracks"][0]
+    assert tr["pace_per_week"] > 0 and tr["eta"] and tr["status"] in ("ok", "risk", "late")
+    assert tids[1] in [r["topic_id"] for r in tr["ready"]]                      # floors 1-2 cleared -> ready to test
+    assert tids[2] not in [r["topic_id"] for r in tr["ready"]]                  # not covered -> locked
+
+    r = client.post(f"/api/ft/{cid}/actions", json={"learner_id": lid, "kind": "catch_up", "detail": {"due": "2026-12-01"}})
+    assert r.json()["status"] == "Pending approval"
+    assert client.get(f"/api/ft/{cid}/facilitator").json()["tracks"][0]["actions"][0]["kind"] == "catch_up"
+    assert client.post(f"/api/ft/{cid}/actions", json={"learner_id": lid, "kind": "nope"}).status_code == 400
+
+    v = client.get(f"/api/ft/{cid}/student/{lid}").json()
+    assert v["state"] in ("behind", "ahead", "on_track", "done") and len(v["chapters"]) == 3
+    assert {c["state"] for c in v["chapters"]} <= {"mastered", "covered", "missed", "started", "taught", "untaught"}
+    assert any(c["topic_id"] == tids[0] and c["state"] == "missed" for c in v["chapters"])   # taught in class, not done
+    assert v["missed"] and v["missed"][0]["minutes"] > 0 and v["path"][0]["topic_id"] == tids[0]
+    assert client.get(f"/api/ft/{cid}/student/999999").status_code == 404
+
+
+def test_dev_notes_roundtrip(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import devnotes, main
+    monkeypatch.setattr(devnotes, "ROOT", tmp_path / "dev-notes")
+    c = TestClient(main.app)
+    assert b"/static/dev-notes.js" in c.get("/lms").content          # the Note button is on every page
+    png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    n = c.post("/api/dev-notes", json={"note": "Make the heading bigger", "url": "http://x/lms", "image": png,
+                                        "rect": {"x": 1, "y": 2, "width": 3, "height": 4}, "selector": "h1"}).json()
+    assert n["id"] == 1 and n["status"] == "new" and n["has_shot"]
+    assert (tmp_path / "dev-notes" / "001" / "shot.png").exists()
+    assert c.post("/api/dev-notes", json={"note": "  "}).status_code == 400
+    assert c.patch("/api/dev-notes/1", json={"status": "nope"}).status_code == 400
+    done = c.patch("/api/dev-notes/1", json={"status": "done", "summary": "Bigger now"}).json()
+    assert done["status"] == "done" and done["summary"] == "Bigger now"
+    assert [x["id"] for x in c.get("/api/dev-notes").json()["notes"]] == [1]
+    assert c.get("/api/dev-notes/1/shot.png").headers["content-type"] == "image/png"
+    monkeypatch.setenv("STAFFROOM_DEV_NOTES", "0")
+    assert b"dev-notes.js" not in c.get("/lms").content               # presentation mode

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" class="school" role="img" aria-label="Outline drawing of a school. Each staff room is an agent.">
+<style>
+.school{--ink:#ff9ccb;--bg:#0c0b0e;--staff:#e6197f;--staff2:#ff3d9a;--class:#ffd1e6}
+.school .d,.school .s{fill:none;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.school .s{fill:var(--bg)}
+.school .glass{fill:transparent;transition:fill .5s,filter .5s}
+.school .win.on .glass{fill:var(--staff);filter:drop-shadow(0 0 10px var(--staff))}
+.school .win.on.alt .glass{fill:var(--staff2);filter:drop-shadow(0 0 10px var(--staff2))}
+.school .win[data-room=class].on .glass{fill:var(--class);filter:drop-shadow(0 0 8px var(--class))}
+.school .sign{fill:var(--ink);font:600 13px Inter,system-ui,sans-serif;letter-spacing:5px;text-anchor:middle}
+.school .flag{fill:var(--staff);stroke:var(--ink);stroke-width:2;stroke-linejoin:round}
+</style>
+<!-- trees -->
+<g><path class="d" pathLength="1" d="M92 540V466M92 494l-14-12M92 486l12-10"/><path class="s" pathLength="1" d="M60 458A20 20 0 0 1 68 421A27 27 0 0 1 116 418A20 20 0 0 1 124 458Q92 470 60 458Z"/><path class="d" pathLength="1" d="M1108 540V466M1108 494l-14-12M1108 486l12-10"/><path class="s" pathLength="1" d="M1076 458A20 20 0 0 1 1084 421A27 27 0 0 1 1132 418A20 20 0 0 1 1140 458Q1108 470 1076 458Z"/></g>
+<!-- wings -->
+<rect class="s" pathLength="1" x="160" y="296" width="330" height="244"/>
+<rect class="s" pathLength="1" x="710" y="296" width="330" height="244"/>
+<rect class="s" pathLength="1" x="150" y="284" width="340" height="12"/>
+<rect class="s" pathLength="1" x="710" y="284" width="340" height="12"/>
+<path class="d" pathLength="1" d="M160 394H490M710 394H1040"/>
+<g class="win" data-room="principal" data-i="0"><rect class="glass" x="184" y="320" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="184" y="320" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M208 320V372M184 342H232"/><path class="d" pathLength="1" d="M179 378H237"/></g><g class="win" data-room="librarian" data-i="1"><rect class="glass" x="256" y="320" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="256" y="320" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M280 320V372M256 342H304"/><path class="d" pathLength="1" d="M251 378H309"/></g><g class="win" data-room="librarian" data-i="2"><rect class="glass" x="328" y="320" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="328" y="320" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M352 320V372M328 342H376"/><path class="d" pathLength="1" d="M323 378H381"/></g><g class="win" data-room="teacher" data-i="3"><rect class="glass" x="400" y="320" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="400" y="320" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M424 320V372M400 342H448"/><path class="d" pathLength="1" d="M395 378H453"/></g><g class="win" data-room="examiner" data-i="4"><rect class="glass" x="752" y="320" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="752" y="320" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M776 320V372M752 342H800"/><path class="d" pathLength="1" d="M747 378H805"/></g><g class="win" data-room="examiner" data-i="5"><rect class="glass" x="824" y="320" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="824" y="320" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M848 320V372M824 342H872"/><path class="d" pathLength="1" d="M819 378H877"/></g><g class="win" data-room="observer" data-i="6"><rect class="glass" x="896" y="320" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="896" y="320" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M920 320V372M896 342H944"/><path class="d" pathLength="1" d="M891 378H949"/></g><g class="win" data-room="counsellor" data-i="7"><rect class="glass" x="968" y="320" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="968" y="320" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M992 320V372M968 342H1016"/><path class="d" pathLength="1" d="M963 378H1021"/></g><g class="win" data-room="class" data-i="0"><rect class="glass" x="184" y="410" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="184" y="410" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M208 410V462M184 432H232"/><path class="d" pathLength="1" d="M179 468H237"/></g><g class="win" data-room="class" data-i="1"><rect class="glass" x="256" y="410" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="256" y="410" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M280 410V462M256 432H304"/><path class="d" pathLength="1" d="M251 468H309"/></g><g class="win" data-room="class" data-i="2"><rect class="glass" x="328" y="410" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="328" y="410" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M352 410V462M328 432H376"/><path class="d" pathLength="1" d="M323 468H381"/></g><g class="win" data-room="class" data-i="3"><rect class="glass" x="400" y="410" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="400" y="410" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M424 410V462M400 432H448"/><path class="d" pathLength="1" d="M395 468H453"/></g><g class="win" data-room="class" data-i="4"><rect class="glass" x="752" y="410" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="752" y="410" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M776 410V462M752 432H800"/><path class="d" pathLength="1" d="M747 468H805"/></g><g class="win" data-room="class" data-i="5"><rect class="glass" x="824" y="410" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="824" y="410" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M848 410V462M824 432H872"/><path class="d" pathLength="1" d="M819 468H877"/></g><g class="win" data-room="class" data-i="6"><rect class="glass" x="896" y="410" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="896" y="410" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M920 410V462M896 432H944"/><path class="d" pathLength="1" d="M891 468H949"/></g><g class="win" data-room="class" data-i="7"><rect class="glass" x="968" y="410" width="48" height="52" rx="2"/><rect class="d" pathLength="1" x="968" y="410" width="48" height="52" rx="2"/><path class="d" pathLength="1" d="M992 410V462M968 432H1016"/><path class="d" pathLength="1" d="M963 468H1021"/></g>
+<!-- cupola + flag -->
+<path class="d" pathLength="1" d="M600 84V34"/>
+<path class="flag" d="M600 36c14-7 26 7 40 0v22c-14 7-26-7-40 0z"/>
+<rect class="s" pathLength="1" x="578" y="112" width="44" height="58"/>
+<path class="d" pathLength="1" d="M589 162v-26a11 11 0 0 1 22 0v26"/>
+<polygon class="s" pathLength="1" points="566,112 600,82 634,112"/>
+<!-- central block -->
+<rect class="s" pathLength="1" x="480" y="246" width="240" height="294"/>
+<polygon class="s" pathLength="1" points="448,234 600,150 752,234"/>
+<polyline class="d" pathLength="1" points="482,226 600,166 718,226"/>
+<rect class="s" pathLength="1" x="458" y="234" width="284" height="14"/>
+<circle class="d" pathLength="1" cx="600" cy="200" r="19"/>
+<path class="d clock" pathLength="1" d="M600 200v-12M600 200l9 5"/>
+<rect class="d" pathLength="1" x="522" y="262" width="156" height="30" rx="3"/>
+<text class="sign" x="600" y="282">STAFFROOM</text>
+<path class="d" pathLength="1" d="M490 300h16v240h-16zM694 300h16v240h-16zM486 300h24M690 300h24"/>
+<rect class="d" pathLength="1" x="520" y="320" width="28" height="140" rx="14"/>
+<rect class="d" pathLength="1" x="652" y="320" width="28" height="140" rx="14"/>
+<path class="d" pathLength="1" d="M562 516v-74a38 38 0 0 1 76 0v74M600 404v112"/>
+<path class="d" pathLength="1" d="M552 516h96M542 524h116M532 532h136"/>
+<!-- ground + path -->
+<path class="d" pathLength="1" d="M30 540H1170M552 540l-44 58M648 540l44 58"/>
+</svg>

@@ -6,3 +6,11 @@ venv/
 data/*.db
 data/*.db-*
 .pytest_cache/
+data/melsoft/
+screenshots/fast-track-realistic/
+screenshots/fast-track-pink/
+web/node_modules/
+web/dist/
+screenshots/fast-track-react/
+dev-notes/
+screenshots/
