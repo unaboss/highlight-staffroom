@@ -123,7 +123,7 @@ export default function Presenter() {
           className="fixed right-3 top-1/2 z-40 grid size-8 -translate-y-1/2 place-items-center rounded-full border border-pink-300/40 bg-[#16121a] font-serif text-[15px] font-bold italic text-pink-200 shadow-[0_0_18px_-6px_#ff3d9a] hover:border-pink-300">i</button>
       )}
       {open && !run && (
-        <div role="dialog" aria-label="Presenting tours" className="glass fixed right-14 top-1/2 z-40 w-[min(300px,calc(100vw-80px))] -translate-y-1/2 p-3">
+        <div role="dialog" aria-label="Presenting tours" style={{ position: "fixed" }} className="glass right-14 top-1/2 z-40 w-[min(300px,calc(100vw-80px))] -translate-y-1/2 p-3">
           <button onClick={() => { setOpen(false); setDiagram(true); }} className="mb-2 flex w-full items-center justify-between rounded-xl bg-gradient-to-br from-pink-500 to-pink-600 px-3 py-2 text-left text-sm font-semibold text-white">How the agents work<span aria-hidden="true">◇</span></button>
           <div className="mb-2 px-1 text-label font-semibold text-pink-200/80">Play a tour</div>
           <ul className="grid gap-1.5">
