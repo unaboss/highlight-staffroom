@@ -70,20 +70,20 @@ function pageHome() {
       <section><div class="row between"><h2 class="h2">My courses</h2><a class="small" href="#/courses">View all</a></div>
         <div class="courses">${COURSES.map((c) => `<a class="card course" href="#/course/${c.id}">
           <div class="banner" style="--b:${c.b}"><span class="code">${esc(c.code)}</span></div>
-          <div class="body"><h3>${esc(c.title)}</h3><div class="t">${esc(c.teacher)}${c.ft ? ` · <span class="pill plum" style="padding:0 7px">Fast Track</span>` : ""}</div>
+          <div class="body"><h3>${esc(c.title)}</h3><div class="t">${esc(c.teacher)}${c.ft ? ` · <span class="pill plum" style="padding:0 7px">CFT</span>` : ""}</div>
             <div class="prog"><i style="width:${Math.round(c.progress * 100)}%"></i></div>
             <div class="meta"><span>${Math.round(c.progress * 100)}% complete</span><span>Term 4</span></div></div></a>`).join("")}</div></section>
       <aside class="grid">
         <div class="card pad"><h2 class="h2">Coming up</h2><div class="list" style="margin-top:12px">${DUE.map((d) => `<div><span class="date"><b>${d.d}</b><span>${d.m}</span></span>
           <div class="grow"><b>${esc(d.t)}</b><div class="small mute">${esc(d.c)}</div></div><span class="pill ${d.s}">${esc(d.st)}</span></div>`).join("")}</div></div>
-        <div class="card pad"><div class="row"><span class="ic plum">${IC.bolt}</span><div><b>Fast Track</b><div class="small mute">External tool · Cyber Security Learnership</div></div></div>
+        <div class="card pad"><div class="row"><span class="ic plum">${IC.bolt}</span><div><b>Classroom Fast Track</b><div class="small mute">External tool · Cyber Security Learnership</div></div></div>
           <p class="small" style="color:var(--ink-2);margin:12px 0 14px">Chapter ladders built from your course notes. Scores flow back into the gradebook.</p>
           <a class="btn primary" href="#/course/cyber/fasttrack">Open in course</a></div>
       </aside>
     </div>`;
 }
 
-const TABS = [["modules", "Modules"], ["assignments", "Assignments"], ["quizzes", "Quizzes"], ["grades", "Gradebook"], ["fasttrack", "Fast Track"]];
+const TABS = [["modules", "Modules"], ["assignments", "Assignments"], ["quizzes", "Quizzes"], ["grades", "Gradebook"], ["fasttrack", "Classroom Fast Track"]];
 
 async function pageCourse(id, tab) {
   nav(tab === "grades" ? "grades" : "courses");
@@ -115,7 +115,7 @@ async function tabModules(c) {
   }
   return weeks.map((w, i) => `<details class="card week section" ${i < 2 ? "open" : ""}><summary><b>${esc(w.title)}</b><span class="pill ${i === 0 ? "ok" : i === 1 ? "warn" : "grey"}">${i === 0 ? "Complete" : i === 1 ? "In progress" : "Not started"}</span></summary>
     <div class="items">${w.items.map((t, k) => `<div class="it"><span class="ic">${k % 3 === 1 ? IC.video : IC.file}</span><div>${esc(t)}<div class="small mute">${k % 3 === 1 ? "Recorded class · 45 min" : "Notes"}</div></div><span class="small mute">${i === 0 ? "Viewed" : ""}</span></div>`).join("")}
-      ${c.ft ? `<div class="it"><span class="ic plum">${IC.bolt}</span><div><b>Fast Track ladder</b><div class="small mute">External tool · graded</div></div><a class="btn" href="${ftLink("student")}" target="_blank" rel="noopener">Launch ${IC.out}</a></div>` : ""}
+      ${c.ft ? `<div class="it"><span class="ic plum">${IC.bolt}</span><div><b>Classroom Fast Track ladder</b><div class="small mute">External tool · graded</div></div><a class="btn" href="${ftLink("student")}" target="_blank" rel="noopener">Launch ${IC.out}</a></div>` : ""}
     </div></details>`).join("");
 }
 
@@ -139,9 +139,9 @@ async function tabGrades(c) {
     const acc = l.answered ? Math.round((100 * l.correct) / l.answered) + "%" : "–";
     return `<tr><td><b>${esc(name)}</b>${l.sample ? ` <span class="pill grey" style="padding:0 6px">sample</span>` : ""}</td><td class="n">${mark(name, "a1")}%</td><td class="n">${mark(name, "q1")}%</td><td class="n">${mark(name, "q2", 40, 90)}%</td>${cells}<td class="ft n">${acc}</td><td class="ft n">${l.xp.toLocaleString("en-ZA")}</td></tr>`;
   }).join("");
-  return `<div class="card"><div class="pad row between" style="flex-wrap:wrap"><div><h2 class="h2">Gradebook</h2><div class="small mute">Columns marked Fast Track sync from the external tool when a learner clears a level.</div></div>
+  return `<div class="card"><div class="pad row between" style="flex-wrap:wrap"><div><h2 class="h2">Gradebook</h2><div class="small mute">Columns marked CFT sync from the external tool when a learner clears a level.</div></div>
       <span class="pill plum">${IC.bolt.replace("<svg", '<svg width="12" height="12"')} Synced just now</span></div>
-    <div class="gbwrap"><table class="gb"><thead><tr><th>Learner</th><th>Assign. 1</th><th>Quiz 1</th><th>Quiz 2</th>${show.map((t) => `<th class="ft" title="${esc(t.title)}">FT · ${esc(t.title.split(":")[0])}</th>`).join("")}<th class="ft">FT accuracy</th><th class="ft">FT XP</th></tr></thead>
+    <div class="gbwrap"><table class="gb"><thead><tr><th>Learner</th><th>Assign. 1</th><th>Quiz 1</th><th>Quiz 2</th>${show.map((t) => `<th class="ft" title="${esc(t.title)}">CFT · ${esc(t.title.split(":")[0])}</th>`).join("")}<th class="ft">FT accuracy</th><th class="ft">FT XP</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="9" class="mute">No learners yet.</td></tr>`}</tbody></table></div></div>`;
 }
 
@@ -150,7 +150,7 @@ async function tabFastTrack() {
   const active = b ? b.learners.filter((l) => l.answered).length : 0;
   const levels = b ? b.learners.reduce((s, l) => s + l.levels, 0) : 0;
   return `<div class="card tool"><div class="copy"><span class="pill plum">${IC.bolt.replace("<svg", '<svg width="12" height="12"')} External tool</span>
-      <h2>Staffroom Fast Track</h2><p>Each chapter of the course notes becomes a ten-level ladder with a final quiz. Every question cites the passage it came from.</p>
+      <h2>Classroom Fast Track (CFT)</h2><p>Each chapter of the course notes becomes a ten-level ladder with a final quiz. Every question cites the passage it came from.</p>
       <div class="facts"><span><b>${S.topics.length}</b> chapters</span><span><b>${active}</b> learners active</span><span><b>${levels}</b> levels cleared</span></div>
       <div class="row" style="flex-wrap:wrap"><a class="btn primary" href="${ftLink("student")}" target="_blank" rel="noopener">Launch as student ${IC.out}</a><a class="btn" href="${ftLink("facilitator")}" target="_blank" rel="noopener">Open facilitator view</a></div>
       <p class="small mute" style="margin-top:14px">Opens in a new tab. Scores return to the Gradebook automatically.</p></div>

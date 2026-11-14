@@ -7,6 +7,7 @@ import { api, melsoftCourse, splitTitle, store } from "@/lib/api";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { Icon, Modal, NumberTicker, SpotlightCard, confetti } from "@/components/ui/kit";
 import { cn } from "@/lib/utils";
+import { moduleSummary, taughtModules } from "@/lib/pick";
 import Landing from "@/pages/Landing";
 
 const QUIZ = 11;
@@ -107,6 +108,7 @@ function Picker({ data, learner }: { data: Data; learner: number }) {
   const [mod, setMod] = useState("All"); const [q, setQ] = useState("");
   const st = data.stats || {}, me = data.learners.find((l) => l.id === learner);
   const mods = ["All", ...new Set(data.chapters.map((c) => splitTitle(c.title).mod))];
+  const taught = taughtModules(mods.slice(1));
   const acc = st.answered ? Math.round((100 * st.correct) / st.answered) : null;
   const cal = st.sure_right + st.sure_wrong ? Math.round((100 * st.sure_right) / (st.sure_right + st.sure_wrong)) : null;
   const resume = [...data.chapters].filter((c) => topOf(c) > 0 && !c.levels?.[QUIZ]?.passed).sort((a, b) => topOf(b) - topOf(a))[0];
@@ -115,21 +117,40 @@ function Picker({ data, learner }: { data: Data; learner: number }) {
     <>
       <h2 className="text-h2">{resume ? "Keep climbing" : "Pick a chapter"}, {(me?.name || "").split(" ")[0]}.</h2>
       <p className="mt-2 max-w-[640px] text-body text-pink-200/75">Every chapter is a tower of ten floors: recall it, explain it, catch the mistake, apply it, analyse it. Then the final quiz puts the roof on.</p>
-      {resume && <a href={`#/play/chapter/${resume.id}`} className="mt-6 block max-w-full sm:inline-block"><ShimmerButton className="w-full gap-2 whitespace-normal px-5 py-3 text-left font-semibold sm:w-auto" background="linear-gradient(135deg,#e6197f,#c00d68)" shimmerColor="#ffd1e6">Continue {splitTitle(resume.title).name} · floor {topOf(resume) + 1}{Icon.arrow}</ShimmerButton></a>}
       <div className="glass mb-6 mt-7 grid grid-cols-2 gap-px overflow-hidden sm:grid-cols-4">
         {[[st.xp || 0, "XP earned"], [st.best_streak || 0, "best streak"], [acc, "answers right", "%"], [cal, "right when certain", "%"]].map(([v, l, s], i) => (
           <div key={i} className="bg-[#0c0b0e]/55 px-[18px] py-4"><b className="stat block">{v === null ? "–" : <><NumberTicker value={v as number} />{s}</>}</b><span className="mt-2 block text-label text-pink-200/70">{l}</span></div>
         ))}
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
-        <label className="flex min-w-0 flex-[1_1_240px] items-center gap-2 rounded-full border border-pink-300/15 bg-white/5 px-3.5">
-          <svg viewBox="0 0 24 24" className="size-4 text-pink-200/60" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${data.chapters.length} chapters`} aria-label="Search chapters" className="min-w-0 flex-1 bg-transparent py-2.5 outline-none placeholder:text-pink-200/50" />
-        </label>
         <div className="flex max-w-full gap-1.5 overflow-x-auto p-0.5">
-          {mods.map((m) => <button key={m} onClick={() => setMod(m)} className={cn("whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[13px] font-semibold", m === mod ? "border-pink-200 bg-pink-200 text-[#1a0d14]" : "border-pink-300/15 text-pink-200/80")}>{m}</button>)}
+          {mods.map((m) => <button key={m} type="button" aria-pressed={m === mod} onClick={() => setMod(m)} className={cn("whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[13px] font-semibold", m === mod ? "border-pink-200 bg-pink-200 text-[#1a0d14]" : "border-pink-300/15 text-pink-200/80")}>{m}</button>)}
         </div>
       </div>
+      {mod === "All" && !q ? (
+        /* "All" shows one card per module; its chapter cards open when the module is picked (dev note 46). */
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
+          {mods.slice(1).map((m, i) => {
+            const own = data.chapters.filter((c) => splitTitle(c.title).mod === m);
+            const s = moduleSummary(own.map((c) => ({ top: topOf(c), quiz: !!c.levels?.[QUIZ]?.passed })));
+            const inClass = taught.has(m);
+            return (
+              <motion.button key={m} type="button" onClick={() => setMod(m)} initial={{ opacity: 0.35, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i, 12) * 0.04 }}
+                aria-label={`${m}: ${s.count} chapters, ${s.finished} finished, level ${s.level} of 10${inClass ? "" : ", not taught in class yet"}. Show its chapters`}
+                className="glass grid grid-cols-[1fr_auto] items-center gap-3.5 px-[18px] py-4 text-left transition-[border-color,transform] hover:-translate-y-0.5 hover:border-pink-300/30">
+                <div className="min-w-0">
+                  <div className="font-mono text-xs font-semibold text-pink-400">Module</div>
+                  <div className="mt-0.5 text-[20px] font-semibold leading-snug">{m}</div>
+                  <div className="mt-1.5 text-[12.5px] text-pink-200/70">{s.count} chapter{s.count === 1 ? "" : "s"} · {s.finished} finished · {inClass ? "done in class" : "not taught yet"}</div>
+                </div>
+                <div className="flex w-[26px] flex-col-reverse gap-0.5" aria-hidden="true">
+                  {Array.from({ length: 10 }, (_, k) => <i key={k} className="h-1 rounded-sm" style={k < s.level ? { background: HUE[SKILL[data.skills[k + 1]] || "quiz"], boxShadow: `0 0 8px -1px ${HUE[SKILL[data.skills[k + 1]] || "quiz"]}` } : { background: "rgba(255,170,210,.1)" }} />)}
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      ) : (
       <div className="grid grid-cols-1 gap-3 md:grid-cols-[repeat(auto-fill,minmax(330px,1fr))]">
         {rows.map((c, i) => {
           const t = splitTitle(c.title), top = topOf(c), quiz = c.levels?.[QUIZ]?.passed;
@@ -145,6 +166,7 @@ function Picker({ data, learner }: { data: Data; learner: number }) {
           );
         })}
       </div>
+      )}
     </>
   );
 }

@@ -33,7 +33,7 @@
 <circle class="d" pathLength="1" cx="600" cy="200" r="19"/>
 <path class="d clock" pathLength="1" d="M600 200v-12M600 200l9 5"/>
 <rect class="d" pathLength="1" x="522" y="262" width="156" height="30" rx="3"/>
-<text class="sign" x="600" y="282">STAFFROOM</text>
+<text class="sign" x="600" y="282">CLASSROOM</text>
 <path class="d" pathLength="1" d="M490 300h16v240h-16zM694 300h16v240h-16zM486 300h24M690 300h24"/>
 <rect class="d" pathLength="1" x="520" y="320" width="28" height="140" rx="14"/>
 <rect class="d" pathLength="1" x="652" y="320" width="28" height="140" rx="14"/>

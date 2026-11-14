@@ -1,19 +1,17 @@
-# Staffroom Fast Track
+# Classroom Fast Track (CFT)
 
 **AI staff for online schools, and a game that gets learners exam-ready.** Six agents work like the staff of a school. They plan the term against the exam date, write lesson plans from the teacher's own notes, check every claim against those notes, read the class recording to see who took part, and draft personal tests. Learners climb a tower of questions built from the same notes, and every question cites the passage it came from. Nothing reaches a learner until the teacher approves it.
 
-Built for **Colleague Zero**, the Melsoft Academy hackathon.
+Built for **Colleague Zero**, the Melsoft Academy hackathon. (The project started as *Staffroom*; the classic agent dashboard is still at `/staffroom`.)
 
 ## What each role sees
 
-**School owner** (`/fast-track/#/school`)
-- Every course at a glance: which will finish before its exam, which are at risk, and why.
-- One school drawing where each course is a column of windows.
+Sign in as a **Facilitator** (staff) or a **Student** (learner). There is no sign-up.
 
 **Facilitator** (`/fast-track/#/class`)
 - The course being taught as the headline, the module and section in progress, and days to the exam.
 - *Covered so far*: a route map of the chapters, with a pin where the last class stopped.
-- *Next lesson*: one row with a **View plan** button. The plan cites the notes line by line, shows the Examiner's verdict, and can be printed or approved. After class, record where you stopped.
+- *Next lesson*: one row with a **View plan** button that opens **lesson prep** (`#/class/prep`): the road to the exam as a timeline you can click through, the last Google Meet class, which sections of the notes its transcript actually covered (and what that pace means for the exam), and the lesson as a slide deck. Every slide line cites the notes `[P#]` or the class transcript `[T#]`, with the sources beside the slide. Cut slides or lines, add slides from the notes or openly licensed images from Wikimedia Commons, approve, and print the bundle. After class, record where you stopped. See [docs/LESSON-PREP.md](docs/LESSON-PREP.md).
 - *Exam runway*: one tile per lesson; tiles after the exam flag are striped.
 - *Student plans* (own page): the race, each learner's pace and finish date, topics ready to test, catch-up or early release, learners to check, and class participation from the Meet transcript.
 - *Tests waiting for approval*.
@@ -84,14 +82,23 @@ Health check: `GET /api/health` (returns `{"ok": true, ...}`). The first start l
 |---|---|---|
 | `PORT` | `8000` | Port the server listens on |
 | `FASTTRACK_DATA` | `demo` | `demo` loads only the made-up demo course and the labelled sample learners |
-| `FASTTRACK_PUBLIC` | `1` | Settings are read-only, keys come only from env vars, and the Note button is off |
-| `STAFFROOM_DEV_NOTES` | `0` | The dev Note button (off in public deploys) |
+| `FASTTRACK_PUBLIC` | `1` | Settings are read-only and keys come only from env vars |
+| `FASTTRACK_PUBLIC_AI` | `1` | Live AI on the public demo, behind the caps below (`0` = offline answers only) |
+| `FASTTRACK_AI_PER_IP_HOUR` | `100` | AI actions per visitor IP per hour (one question or one lesson draft = one action) |
+| `FASTTRACK_AI_PER_DAY` | `3000` | AI actions per day for everyone |
+| `FASTTRACK_AI_TOKENS_PER_DAY` | `5000000` | Model tokens per day, the safety net (a few dollars on `deepseek-chat`) |
+| `FASTTRACK_AI_MAX_TOKENS` | `900` | `max_tokens` for each model call |
 | `STAFFROOM_DB` | `/data/staffroom.db` | SQLite file; mount a volume at `/data` to keep it between restarts |
-| `NEBIUS_API_KEY` | *(empty: offline mode)* | Optional API key for any OpenAI-compatible model (the name is historical) |
-| `NEBIUS_BASE_URL` | Nebius | Optional base URL, e.g. `https://api.deepseek.com` |
-| `NEBIUS_MODEL` | Nemotron | Optional model, e.g. `deepseek-chat` |
 
-Without `NEBIUS_API_KEY` the public demo runs in offline mode, so visitors can't spend anyone's model credit.
+**For live AI, set these on the host as secrets (never in the repo):**
+
+| Variable | Value |
+|---|---|
+| `NEBIUS_API_KEY` (or `LLM_API_KEY`) | your DeepSeek API key |
+| `NEBIUS_BASE_URL` (or `LLM_BASE_URL`) | `https://api.deepseek.com` |
+| `NEBIUS_MODEL` (or `LLM_MODEL`) | `deepseek-chat` |
+
+With no key the demo still works: every agent falls back to its offline answer. When a cap is reached the app shows "The live AI limit for the demo is reached, so this is the offline answer" instead of an error.
 
 ### Deploy on Render (free)
 
@@ -112,7 +119,7 @@ The repo has a `render.yaml` blueprint: a free Docker web service from the `fast
 
 Without a key the agents run in **offline mode**: they draft straight from the notes and check with rules in code, so the whole demo works with no network.
 
-To use a model, open **Settings** (gear icon, owner or facilitator), pick **DeepSeek** (base URL `https://api.deepseek.com`, model `deepseek-chat`), paste the key, **Save**, then **Test connection**. Use `deepseek-chat`; `deepseek-reasoner` doesn't support the JSON replies the agents rely on. OpenAI and Nebius presets work the same way, and **Custom** takes any OpenAI-compatible base URL.
+To use a model, open **Settings** (gear icon, facilitator), pick **DeepSeek** (base URL `https://api.deepseek.com`, model `deepseek-chat`), paste the key, **Save**, then **Test connection**. Use `deepseek-chat`; `deepseek-reasoner` doesn't support the JSON replies the agents rely on. OpenAI and Nebius presets work the same way, and **Custom** takes any OpenAI-compatible base URL.
 
 On a server, set the key as environment variables instead: `NEBIUS_API_KEY`, `NEBIUS_BASE_URL` and `NEBIUS_MODEL` (the names are historical; any provider works). The app never sends a saved key back to the browser; it shows only its first three and last four characters.
 
@@ -122,7 +129,7 @@ On a server, set the key as environment variables instead: `NEBIUS_API_KEY`, `NE
 |---|---|---|
 | **Model** | Base URL, model and key for any OpenAI-compatible endpoint. Default: Nemotron Super 49B on Nebius Token Factory | Drafting, revising, search planning, on-topic judgements, and the Examiner's second opinion |
 | **ClickUp** | Personal API token (ClickUp → Settings → Apps), then **Set up this course** | Creates a Space with three lists: *Lesson plan*, *Learner follow-ups* and *Tests: needs approval*. Plans, reports and tests become tasks. **Check for approvals** releases a test once its task is closed |
-| **Google Meet** | OAuth access token with `meetings.space.readonly` | Pulls the latest class for a meeting code: participant sessions for the register, and transcript entries for the Class Observer. Transcripts must be on in the meeting |
+| **Google Meet** | OAuth access token with `meetings.space.readonly` (add `drive.meet.readonly` for recording thumbnails) | Pulls the latest class for a meeting code: participant sessions for the register, and transcript entries for the Class Observer. Transcripts must be on in the meeting. Lesson prep shows the recording's thumbnail when the class was recorded |
 | **Moodle** | Site URL and a web service token | Imports the class list (`core_enrol_get_enrolled_users`) |
 | **Notes** | Markdown, text or PDF | The Librarian splits it into passages by chapter, section and page |
 
@@ -132,22 +139,35 @@ You can upload a transcript (`.vtt`) and a register (`.csv` with name, joined, l
 
 - **FastAPI** back end and one **SQLite** file, with FTS5 full-text search. There is no other server.
 - **Agents** in `app/agents/`. `app/orchestrator.py` chains them into jobs on background threads. Every step is an event, streamed to the browser over **SSE** (`/api/events/stream`).
-- **Dashboard** is plain HTML, CSS and JavaScript in `app/static/`, with no build step.
+- **Model access** goes through one OpenAI-compatible client (`app/llm.py`, the `openai` Python package), so DeepSeek, OpenAI, Nebius or any compatible provider works. On a public deployment every call passes the AI gate (`app/ai_gate.py`), which counts actions and enforces the caps.
+- **Classroom Fast Track** is a React 19 + Vite + TypeScript + Tailwind v4 app in `web/`, built to `web/dist` and served by FastAPI at `/fast-track`. Components are shadcn-style, with pieces adapted from **21st.dev** (Magic UI's Animated Beam and Shimmer Button), animation with framer-motion, and three.js for the 3D views.
 - **Integrations** in `app/integrations/`: ClickUp API v2, Google Meet REST v2 and Moodle web services, all using `httpx`.
+- The classic agent dashboard at `/staffroom` is plain HTML, CSS and JavaScript in `app/static/`.
 - The citation and checking approach is adapted from the *Ask the Commission* app: numbered passages, citations required, and a verdict per claim.
+
+### Agent patterns
+
+Mapped to Anthropic's [*Building Effective AI Agents*](https://www.anthropic.com/engineering/building-effective-agents):
+
+| Pattern | Where it is |
+|---|---|
+| **Orchestrator-workers** | The Principal plans the term and hands each lesson to the Librarian, Subject Teacher and Examiner (`orchestrator.py`). |
+| **Evaluator-optimizer** | The Examiner checks every line of a draft against its cited passage and sends unsupported lines back to the Subject Teacher, who rewrites them; the loop is capped, then the teacher decides. |
+| **Routing** | The Counsellor routes each learner by their evidence: who gets flagged for help, and which level their personal test is set at (one above their mastery). |
+| **Prompt chaining** | Lesson prep runs Librarian → Subject Teacher → Examiner, each step's output feeding the next. |
+| **Human in the loop** | Nothing reaches a learner until the teacher approves it: lesson plans and personal tests both wait for approval. |
 
 ```
 app/
-  agents/      principal, librarian, teacher, examiner, observer, counsellor
+  agents/      principal, principal_chat, librarian, teacher, examiner, observer, counsellor
   integrations/clickup, meet, moodle
   orchestrator.py   jobs: plan term, prepare lesson, process class, build test, sync ClickUp
-  main.py           API + static dashboard
-  static/           index.html, app.js, styles.css
-data/demo/     course, syllabus, notes, learners, quiz marks, recorded class
-tests/         offline tests, including a fake model for the send-back loop
+  ai_gate.py        public-demo AI caps
+  main.py           API, static dashboard and the React app
+web/src/       Classroom Fast Track (React)
+data/demo/     the made-up demo course: syllabus, notes, learners, quiz marks, recorded class
+tests/         offline tests, including a fake model for the send-back loop and the AI caps
 ```
-
-- **Fast Track** is a React 19 + Vite + Tailwind app in `web/`, built to `web/dist` and served by FastAPI at `/fast-track`. The 3D school and tower use three.js.
 
 ## Tests
 

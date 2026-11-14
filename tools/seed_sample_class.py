@@ -28,6 +28,7 @@ SAMPLE = [("Sample 1", 0.90, 10), ("Sample 2", 0.86, 9), ("Sample 3", 0.82, 8), 
           ("Sample 9", 0.52, 2), ("Sample 10", 0.45, 1)]
 DOMAIN = "@sample.demo"
 SOURCE = "sample class"
+PAST = "sample class (past)"          # earlier classes on already-taught lessons, for Review classes (dev note 39)
 TEACHER = "Facilitator"
 # A common wrong idea about the first chapter. The Examiner should not find it in the notes.
 MISCONCEPTION = "Biometric authentication is weak, so companies should rely on simple passwords that never change."
@@ -35,6 +36,9 @@ MISCONCEPTION = "Biometric authentication is weak, so companies should rely on s
 
 def remove(cid: int) -> int:
     facilitate.ensure_tables()
+    for s in db.q("SELECT id FROM sessions WHERE course_id = ? AND source = ?", (cid, PAST)):
+        db.run("DELETE FROM participation WHERE session_id = ?", (s["id"],))
+        db.run("DELETE FROM sessions WHERE id = ?", (s["id"],))
     for s in db.q("SELECT id, lesson_id FROM sessions WHERE course_id = ? AND source = ?", (cid, SOURCE)):
         db.run("DELETE FROM participation WHERE session_id = ?", (s["id"],))
         db.run("DELETE FROM flags WHERE session_id = ?", (s["id"],))
@@ -69,12 +73,55 @@ def seed(cid: int) -> int:
                 res = fasttrack.record(lid, t["id"], level, answers, today)
                 if not res["passed"]:
                     break
+    seed_past_classes(cid)
     seed_class(cid)
     return len(SAMPLE)
 
 
 def _clock(t0: int) -> str:
     return f"{t0 // 3600:02d}:{t0 % 3600 // 60:02d}:{t0 % 60:02d}.000"
+
+
+def seed_past_classes(cid: int) -> int:
+    """A made-up Meet-style transcript for each lesson already marked taught that has no class recorded,
+    so Review classes has a history to scroll. Only placeholder learners speak; lines come from the
+    chapter's own notes. Lesson status is left as it is."""
+    rows = db.q("SELECT l.id, l.taught_on, l.part, l.parts, t.title AS chapter FROM lessons l JOIN topics t ON t.id = l.topic_id "
+                "WHERE l.course_id = ? AND l.status IN ('Taught', 'Reviewed') AND l.taught_on IS NOT NULL "
+                "AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.lesson_id = l.id) ORDER BY l.seq", (cid,))
+    rng = random.Random(23)
+    n = 0
+    for k, l in enumerate(rows):
+        sections = facilitate.chapter_sections(cid, l["chapter"])
+        if not sections:
+            continue
+        by_sec: dict[str, list[str]] = {}
+        for p in db.q("SELECT section, text FROM passages WHERE course_id = ? AND chapter = ? ORDER BY id",
+                      (cid, l["chapter"])):
+            by_sec.setdefault(fasttrack.section_name(p["section"] or ""), []).extend(
+                x for x in sentences(p["text"]) if 6 <= len(x.split()) <= 30)
+        name = l["chapter"].split(":", 1)[-1].strip()
+        voices = [v for v, _, _ in SAMPLE]
+        lines = [(TEACHER, f"Morning everyone. Today is {name}. Cameras on if you can.")]
+        for j, sec in enumerate(sections):
+            pick = itertools.cycle(by_sec.get(sec) or ["Let's read this part of the notes together."])
+            lines += [(TEACHER, f"Next, {sec}."), (TEACHER, next(pick)), (voices[(k + j) % 6], next(pick)),
+                      (voices[(k + j + 3) % 10], rng.choice(["Can you say that again?", "That makes sense.",
+                                                            "Is this in the test?", "Okay, got it."])),
+                      (TEACHER, next(pick))]
+        lines.append((TEACHER, "That's the chapter. Try the Fast Track levels on it before next class."))
+        vtt, t = ["WEBVTT", ""], 5
+        for who, text in lines:
+            vtt += [f"{_clock(t)} --> {_clock(t + 20)}", f"<v {who}>{text}</v>", ""]
+            t += rng.randint(90, 240)
+        away = {voices[(k * 3 + 7) % 10]} if k % 2 else set()
+        attendance = "name,joined,left\nFacilitator,09:00,10:30\n" + "".join(
+            f"{v},09:0{i % 3},10:30\n" for i, v in enumerate(voices) if v not in away)
+        db.insert("sessions", course_id=cid, lesson_id=l["id"], source=PAST, held_on=l["taught_on"],
+                  entries_json=db.dumps(observer.parse_transcript("\n".join(vtt))),
+                  attendance_json=db.dumps(observer.parse_attendance(attendance)))
+        n += 1
+    return n
 
 
 def seed_class(cid: int) -> dict:

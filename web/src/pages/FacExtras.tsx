@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, fmtDate, splitTitle } from "@/lib/api";
 import { Icon, SpotlightCard, StatusPill, type Status } from "@/components/ui/kit";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/loading";
 
 export type Track = {
   learner_id: number; name: string; sample: boolean; chapters_done: number; chapters_total: number; pace_per_week: number;
@@ -67,13 +68,13 @@ export function TrackPlans({ cid, data, reload }: { cid: number; data: Summary; 
                 <>
                   <span className="min-w-0 text-pink-200/80">Catch-up: {t.catch_up.length ? t.catch_up.map((c) => short(c.title)).join(", ") : "start the first chapter"} · due {fmtDate(due)}</span>
                   <button disabled={busy === t.learner_id} onClick={() => queue(t, "catch_up", { topics: t.catch_up.map((c) => c.topic_id), due })}
-                    className="rounded-full border border-pink-300/30 px-3 py-1.5 text-xs font-semibold hover:border-pink-300/60">Queue catch-up</button>
+                    className="inline-flex items-center gap-1.5 rounded-full border border-pink-300/30 px-3 py-1.5 text-xs font-semibold hover:border-pink-300/60 disabled:opacity-60">{busy === t.learner_id && <Spinner className="size-3.5" />}Queue catch-up</button>
                 </>
               ) : (
                 <>
                   <span className="min-w-0 text-pink-200/80">Ahead: release {t.next_topic ? short(t.next_topic.title) : "the next assignment"} early</span>
                   <button disabled={busy === t.learner_id} onClick={() => queue(t, "release_early", { topic: t.next_topic?.topic_id })}
-                    className="rounded-full border border-pink-300/30 px-3 py-1.5 text-xs font-semibold hover:border-pink-300/60">Queue early release</button>
+                    className="inline-flex items-center gap-1.5 rounded-full border border-pink-300/30 px-3 py-1.5 text-xs font-semibold hover:border-pink-300/60 disabled:opacity-60">{busy === t.learner_id && <Spinner className="size-3.5" />}Queue early release</button>
                 </>
               )}
             </div>
@@ -138,7 +139,7 @@ export function TestsWaiting({ tests, reload }: { tests: any[]; reload: () => vo
           <div className="flex gap-2">
             <a href={`/staffroom#tests/${t.id}`} className={cn("rounded-full border border-pink-300/25 px-3.5 py-1.5 text-sm font-semibold")}>Review</a>
             <button disabled={busy === t.id} onClick={async () => { setBusy(t.id); try { await api(`/api/tests/${t.id}/approve`, { method: "POST" }); reload(); } finally { setBusy(null); } }}
-              className="rounded-full bg-gradient-to-br from-pink-500 to-pink-600 px-3.5 py-1.5 text-sm font-semibold text-white">Approve and release</button>
+              className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 px-3.5 py-1.5 text-sm font-semibold text-white disabled:opacity-60">{busy === t.id && <Spinner className="size-3.5" />}Approve and release</button>
           </div>
         </SpotlightCard>
       ))}
@@ -160,11 +161,6 @@ export function TrackSummary({ data }: { data: Summary }) {
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        {data.tracks.map((t) => (
-          <a key={t.learner_id} href={`#/learners/${t.learner_id}`} className="inline-flex items-center gap-2 rounded-full border border-pink-300/20 py-1 pl-1 pr-3 text-sm hover:border-pink-300/50">
-            <StatusPill s={t.status} label={false} /><span>{t.name.replace(" (sample)", "")}</span>
-            <span className="font-mono text-xs text-pink-200/60">{t.chapters_done}/{t.chapters_total}</span></a>
-        ))}
         <a href="#/learners" className="ml-auto inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 px-4 py-2 text-sm font-semibold text-white">
           View student plans{Icon.arrow}</a>
       </div>

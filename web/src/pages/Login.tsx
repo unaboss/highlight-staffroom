@@ -1,22 +1,20 @@
-/* Demo sign-in, ported from app/static/ft/login.html: the 3D school draws itself on the horizon, a
-   striped sun rises, light trails run down the grid road, the loading bars fill on both edges as the
-   app really loads (course, chapters, class board, facilitator plan, fonts, logo, the 3D model), then
-   the card slides in. No email or password: pick a role. */
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+/* Demo sign-in: the 3D school draws itself on the horizon of a ruled exercise-book page, lit from
+   behind by a soft glow; the meters on both edges fill as the app really loads (course, chapters,
+   class board, facilitator plan, fonts, logo, the 3D model), then the card slides in. No email or
+   password: pick a role. (The stock synthwave sun, grid road and shimmer button were removed in
+   dev notes 18 and 21: they read as generic.) */
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { ShimmerButton } from "@/components/ui/shimmer-button";
 import "./login.css";
 
 export type Role = "owner" | "facilitator" | "student";
 const ROLES: { id: Role; label: string; icon: React.ReactNode }[] = [
-  { id: "owner", label: "School owner", icon: <svg viewBox="0 0 24 24"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6" /></svg> },
+  // the school owner role was taken off the sign-in (dev note 20)
   { id: "facilitator", label: "Facilitator", icon: <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg> },
   { id: "student", label: "Student", icon: <svg viewBox="0 0 24 24"><path d="M2 9l10-5 10 5-10 5z" /><path d="M6 11v5c3 2 9 2 12 0v-5" /></svg> },
 ];
 
-// The 3D school ships in its own chunk (three.js), so fetching it is part of the real loading.
-const loadSchool = () => import("@/components/School3D");
-const School3D = lazy(loadSchool);
+// The school scene was taken off the sign-in (dev note 24): only the background lines stay.
 
 /* Real loading work, in order. Each task names the staff line shown while it runs and a weight
    (its share of the bars). A task that fails still counts as done: the app has an offline mode and
@@ -31,7 +29,7 @@ function loadingTasks(schoolDrawn: Promise<void>): Task[] {
     { msg: "Principal is planning the term", w: 2, run: () => api(`/api/ft/${cid}/facilitator`) },
     { msg: "Examiner is checking every line", w: 2, run: () => api(`/api/ft/${cid}/board`) },
     { msg: "Counsellor is getting ready", w: 1, run: () => Promise.all([document.fonts?.ready, img("/static/ft/mark.svg")]) },
-    { msg: "Building the staffroom", w: 2, run: () => loadSchool().then(() => schoolDrawn) },
+    { msg: "Building the classroom", w: 2, run: () => schoolDrawn },
   ];
 }
 
@@ -41,19 +39,21 @@ export default function Login({ onEnter }: { onEnter: (r: Role) => void }) {
   const [phase, setPhase] = useState<"loading" | "drawing" | "ready">("loading");
   const [pct, setPct] = useState(0);
   const [msg, setMsg] = useState("Opening the school");
-  const [flash, setFlash] = useState(false);
+  const [, setFlash] = useState(false);
   const drawn = useRef<{ p: Promise<void>; done: () => void }>(null as any);
-  if (!drawn.current) { let done = () => {}; const p = new Promise<void>((r) => (done = r)); drawn.current = { p, done }; }
-  const [role, setRole] = useState<Role>("owner");
+  if (!drawn.current) drawn.current = { p: Promise.resolve(), done: () => {} };   // no scene to wait for
+  const [role, setRole] = useState<Role>("facilitator");
 
   // layout + perspective ground (same maths as the plain page)
+  // layout: where the horizon and the school sit, shared with the CSS through custom properties
+  // the animated grid road with light trails (brought back after note 21, on request)
   useEffect(() => {
     const el = root.current!, cv = canvas.current!, cx = cv.getContext("2d")!;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     let W = 0, H = 0, HZ = 0, VPX = 0, raf = 0, phaseT = 0, intro = reduce ? 1 : 0;
     const layout = () => {
       W = innerWidth; H = innerHeight; const desk = W >= 900;
-      HZ = Math.round(H * (desk ? 0.6 : 0.68)); VPX = desk ? Math.round(W * 0.64) : Math.round(W / 2);
+      HZ = Math.round(H * (desk ? 0.6 : 0.68)); VPX = Math.round(W / 2);   // the form is centred, so the road is too
       const sw = desk ? Math.min(W * 0.42, 760) : Math.min(W * 0.96, 520);
       el.style.setProperty("--hz", HZ + "px"); el.style.setProperty("--vpx", VPX + "px");
       el.style.setProperty("--sw", sw + "px"); el.style.setProperty("--sun", Math.round(sw * 1.12) + "px");
@@ -148,6 +148,7 @@ export default function Login({ onEnter }: { onEnter: (r: Role) => void }) {
   const bar = (side: "l" | "r") => (
     <div className={`meter ${side} ${phase === "ready" ? "done" : ""}`} aria-hidden="true">
       <div className="track"><div className="fill" style={{ height: pct + "%" }} /></div>
+      <i className="pill" />
       <span className="pct" style={{ bottom: pct + "%" }}>{String(pct).padStart(2, "0")}<small>%</small></span>
     </div>
   );
@@ -156,30 +157,22 @@ export default function Login({ onEnter }: { onEnter: (r: Role) => void }) {
   return (
     <div ref={root} className={`lg fixed inset-0 ${phase === "loading" ? "loading" : ""} ${phase === "ready" ? "ready" : ""}`}>
       <div className="sky">
-        <div className="sun"><div className="halo" /><div className="core" /></div>
-        <div className="school-wrap" aria-hidden="true">
-          <Suspense fallback={null}><School3D className="school-3d" flash={flash} onReady={() => drawn.current.done()} /></Suspense>
-        </div>
       </div>
+      <div className="floor" aria-hidden="true" />
       <canvas ref={canvas} aria-hidden="true" />
       <div className="hz" />
       {bar("l")}{bar("r")}
       <div className="status" role="status"><b /><span>{msg}</span></div>
       <main className="card" aria-label="Sign in">
         <div className="brand">
-          <div className="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10l9-6 9 6" /><path d="M5 10v9h14v-9" /><path d="M10 19v-5h4v5" /></svg></div>
-          <div><small>Staffroom</small><strong>Fast Track</strong></div>
+          <div><small>CFT</small><strong>Classroom Fast Track</strong></div>
         </div>
-        <h1>Step inside</h1>
         <p className="sub">Choose who you are to see where the school stands before the exam.</p>
         <div className="roles" role="group" aria-label="I am a">
           {ROLES.map((r) => <button key={r.id} type="button" aria-pressed={role === r.id} onClick={() => setRole(r.id)}>{r.icon}{r.label}</button>)}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); onEnter(role); }}>
-          <ShimmerButton type="submit" className="w-full py-3.5 text-[15px] font-semibold" borderRadius="12px"
-            background="linear-gradient(180deg,#e6197f,#c00d68)" shimmerColor="#ffd1e6">
-            Continue as {label}
-          </ShimmerButton>
+          <button type="submit" className="cta">Continue as {label}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button>
         </form>
         <div className="or">or</div>
         <button className="alt" type="button" onClick={() => (location.href = "/lms")}>Continue with your LMS</button>

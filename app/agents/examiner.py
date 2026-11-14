@@ -27,12 +27,44 @@ and a short reason that names the passage id that decides it.
 Reply: {"items": [{"id": "<item id>", "verdict": "...", "reason": "..."}]}"""
 
 
+SUPPORT_MIN = 0.8          # share of a line's content words that must appear in the passage it cites
+PARTLY_MIN = 0.45
+
+
 def _lexical(score: float) -> str:
-    if score >= 0.8:
+    if score >= SUPPORT_MIN:
         return SUPPORTED
-    if score >= 0.45:
+    if score >= PARTLY_MIN:
         return PARTLY
     return MISSING
+
+
+def citation_check(text: str, passages: list[dict], claim: str | None = None, by_n: dict | None = None) -> dict:
+    """Deterministic: does the passage a line cites actually support it?
+
+    Every [P#] must point at a passage the Librarian provided, and at least SUPPORT_MIN of the claim's
+    content words (stemmed, stop words dropped) must appear in the cited passage text. Extractive
+    lines score ~100%; a plausible line the notes don't make lands well under half. Returns cites,
+    bad_cites, grounding (0..1), lexical/verdict, supported, and a reason naming the missing words.
+    """
+    by_n = by_n or {p["n"]: p for p in passages}
+    claim = claim or text
+    all_cites = cites(text) + cites(claim)
+    good = sorted({c for c in all_cites if c in by_n})
+    bad = sorted({c for c in all_cites if c not in by_n})
+    if not good:
+        score, verdict = 0.0, UNCITED
+        reason = "No citation to a provided passage" + (f" (cited P{bad[0]}, which doesn't exist)" if bad else "")
+    else:
+        source = " ".join(f"{by_n[c].get('section', '')} {by_n[c]['text']}" for c in good)
+        score = round(overlap(strip_cites(claim), source), 2)
+        verdict = _lexical(score)
+        reason = f"{int(score * 100)}% of its key words appear in " + ", ".join(f"P{c}" for c in good)
+        gone = missing_words(claim, source)
+        if gone and verdict != SUPPORTED:
+            reason += "; not in the source: " + ", ".join(gone[:6])
+    return {"cites": good, "bad_cites": bad, "grounding": score, "lexical": verdict, "verdict": verdict,
+            "reason": reason, "supported": verdict == SUPPORTED}
 
 
 def check(items: list[dict], passages: list[dict], llm, emit, what: str = "items",
@@ -45,24 +77,9 @@ def check(items: list[dict], passages: list[dict], llm, emit, what: str = "items
     emit("Examiner", "start", f"Marking {len(items)} {what} against {len(passages)} passages")
     results = []
     for it in items:
-        claim = it.get("claim") or it["text"]
-        all_cites = cites(it["text"]) + cites(claim)
-        good = sorted({c for c in all_cites if c in by_n})
-        bad = sorted({c for c in all_cites if c not in by_n})
-        if not good:
-            score, verdict = 0.0, UNCITED
-            reason = "No citation to a provided passage" + (f" (cited P{bad[0]}, which doesn't exist)" if bad else "")
-        else:
-            source = " ".join(f"{by_n[c].get('section', '')} {by_n[c]['text']}" for c in good)
-            score = round(overlap(strip_cites(claim), source), 2)
-            verdict = _lexical(score)
-            reason = f"{int(score * 100)}% of its key words appear in " + ", ".join(f"P{c}" for c in good)
-            gone = missing_words(claim, source)
-            if gone and verdict != SUPPORTED:
-                reason += "; not in the source: " + ", ".join(gone[:6])
-        results.append({"id": it["id"], "kind": it.get("kind", ""), "text": it["text"], "cites": good,
-                        "bad_cites": bad, "grounding": score, "lexical": verdict, "verdict": verdict,
-                        "reason": reason})
+        r = citation_check(it["text"], passages, claim=it.get("claim"), by_n=by_n)
+        r.pop("supported")
+        results.append({"id": it["id"], "kind": it.get("kind", ""), "text": it["text"], **r})
 
     if llm.online and results:
         listing = "\n".join(f"{r['id']}: {r['text']}" for r in results)

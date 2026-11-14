@@ -9,7 +9,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, Response,
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, db, demo, devnotes, mode, events, facilitate, fasttrack, orchestrator
+from . import __version__, ai_gate, db, demo, devnotes, mode, events, facilitate, fasttrack, orchestrator
 from .agents import librarian, observer, principal
 from .integrations import clickup
 from .integrations.meet import Meet, MeetError
@@ -17,10 +17,16 @@ from .integrations.moodle import Moodle, MoodleError
 from .llm import DEFAULT_BASE_URL, DEFAULT_MODEL, get_llm
 
 STATIC = Path(__file__).resolve().parent / "static"
-app = FastAPI(title="Staffroom", version=__version__)
+app = FastAPI(title="Classroom Fast Track", version=__version__)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 from . import connectors  # noqa: E402 - Meet, Moodle and ClickUp for Fast Track (/api/connectors, /lms/launch)
 app.include_router(connectors.router)
+from . import google_auth  # noqa: E402 - Sign in with Google for the Meet connector
+app.include_router(google_auth.router)
+from . import prep  # noqa: E402 - lesson prep behind "View plan": timeline, last class, coverage, slide deck
+app.include_router(prep.router)
+from . import progress  # noqa: E402 - track progress (pace lines, Counsellor plan) and the notes reader
+app.include_router(progress.router)
 
 
 @app.on_event("startup")
@@ -37,7 +43,7 @@ def _writable():
 async def dev_notes_button(request: Request, call_next):
     """Every HTML page gets the floating Note button (one shared script), unless notes are off."""
     resp = await call_next(request)
-    if mode.public() or not devnotes.enabled() or not resp.headers.get("content-type", "").startswith("text/html"):
+    if not devnotes.enabled() or not resp.headers.get("content-type", "").startswith("text/html"):
         return resp
     body = b"".join([chunk async for chunk in resp.body_iterator])
     if b"/static/dev-notes.js" not in body and b"</body>" in body:
@@ -50,8 +56,9 @@ async def dev_notes_button(request: Request, call_next):
 WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 app.mount("/fast-track/assets", StaticFiles(directory=WEB_DIST / "assets", check_dir=False), name="fast-track-assets")
 
-SECRET_KEYS = {"nebius_api_key", "clickup_token", "google_access_token", "moodle_token"}
-SETTING_KEYS = SECRET_KEYS | {"nebius_base_url", "nebius_model", "clickup_team_id", "moodle_url", "as_of_date"}
+SECRET_KEYS = {"nebius_api_key", "clickup_token", "google_access_token", "moodle_token", "google_client_secret"}
+SETTING_KEYS = SECRET_KEYS | {"nebius_base_url", "nebius_model", "clickup_team_id", "moodle_url", "as_of_date",
+                              "google_client_id"}
 
 
 @app.get("/")
@@ -99,7 +106,7 @@ def lms_page():
 def health():
     llm = get_llm()
     course = db.one("SELECT title FROM courses ORDER BY id LIMIT 1")
-    return {"ok": True, "version": __version__, "llm": {"online": llm.online, "label": llm.label},
+    return {"ok": True, "name": "Classroom Fast Track", "version": __version__, "llm": {"online": llm.online, "label": llm.label},
             "mode": {"demo": mode.demo(), "public": mode.public()}, "course": course["title"] if course else None}
 
 
@@ -121,7 +128,7 @@ def _integrations(course: dict | None = None) -> dict:
     return {
         "clickup": bool(db.get_setting("clickup_token")),
         "clickup_course": bool(course and clickup.course_lists(course)),
-        "meet": bool(db.get_setting("google_access_token")),
+        "meet": google_auth.signed_in() or bool(db.get_setting("google_access_token")),
         "moodle": bool(db.get_setting("moodle_url") and db.get_setting("moodle_token")),
     }
 
@@ -298,11 +305,13 @@ def plan(cid: int):
 
 
 @app.post("/api/lessons/{lid}/prepare")
-def prepare(lid: int):
+def prepare(lid: int, request: Request):
     l = db.one("SELECT course_id FROM lessons WHERE id = ?", (lid,))
     if not l:
         raise HTTPException(404, "Lesson not found")
-    return {"job_id": orchestrator.start_job("prepare_lesson", l["course_id"], orchestrator.job_prepare_lesson, lid)}
+    llm, notice = ai_gate.for_action(request.client.host if request.client else None)   # one draft = one action
+    return {"job_id": orchestrator.start_job("prepare_lesson", l["course_id"], orchestrator.job_prepare_lesson, lid, llm),
+            "notice": notice}
 
 
 def _next_lesson(cid: int) -> dict:
@@ -335,9 +344,12 @@ async def upload_class(cid: int, transcript: UploadFile = File(...), attendance:
 @app.post("/api/courses/{cid}/sessions/meet")
 def meet_class(cid: int, meeting_code: str = Body(..., embed=True), lesson_id: int | None = Body(None, embed=True)):
     course = _course(cid)
-    token = db.get_setting("google_access_token")
+    try:
+        token = google_auth.access_token()
+    except google_auth.GoogleAuthError as e:
+        raise HTTPException(502, str(e))
     if not token:
-        raise HTTPException(400, "Add a Google access token in Settings first")
+        raise HTTPException(400, "Sign in with Google in Settings first")
     try:
         entries, att, rec = Meet(token).class_data(meeting_code.strip() or course.get("meet_code") or "")
     except MeetError as e:
@@ -652,6 +664,106 @@ def stream():
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+# ---------------------------------------------------------------- live agent run (self-correction on stage)
+
+SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+
+def _terminal(ev: dict) -> bool:
+    return ev.get("agent") == "Staffroom" and ev.get("kind") in ("done", "error")
+
+
+@app.post("/api/agents/run")
+@app.post("/api/agents/demo-run")
+def agents_run(request: Request, lesson_id: int | None = Body(None, embed=True),
+               course_id: int | None = Body(None, embed=True), demo: bool = Body(False, embed=True)):
+    """Prepare a lesson plan live: Librarian -> Subject Teacher -> Examiner, with every line streamed.
+
+    Uses the model through the AI gate (one run = one action). With no model (offline, public without
+    live AI, or the cap reached) or FASTTRACK_DATA=demo it is a scripted demo run: the first draft carries
+    one plausible but ungrounded line so the Examiner always catches and the Teacher always fixes one."""
+    import os
+    from .agents import principal_chat
+    if lesson_id:
+        lesson = db.one("SELECT id, course_id FROM lessons WHERE id = ?", (lesson_id,))
+        if not lesson:
+            raise HTTPException(404, "Lesson not found")
+    else:
+        cid = principal_chat._course_id(course_id)
+        if not cid:
+            raise HTTPException(400, "There's no course yet")
+        lesson = (db.one("SELECT id, course_id FROM lessons WHERE course_id = ? AND status = 'Planned' ORDER BY seq LIMIT 1", (cid,))
+                  or db.one("SELECT id, course_id FROM lessons WHERE course_id = ? ORDER BY seq DESC LIMIT 1", (cid,)))
+        if not lesson:
+            raise HTTPException(400, "Plan the term first: there are no lessons yet")
+    llm, notice = ai_gate.for_action(request.client.host if request.client else None)
+    scripted = demo or not llm.online or os.environ.get("FASTTRACK_DATA", "").lower() == "demo"
+    try:
+        pace = float(os.environ.get("FASTTRACK_DEMO_PACE", "0.45")) if not llm.online else 0.0
+    except ValueError:
+        pace = 0.45
+    job_id = orchestrator.start_job("prepare_lesson", lesson["course_id"], orchestrator.job_prepare_lesson,
+                                    lesson["id"], llm, scripted, pace)
+    return {"job_id": job_id, "lesson_id": lesson["id"], "demo": scripted, "online": llm.online, "notice": notice}
+
+
+@app.get("/api/agents/run/{job_id}/stream")
+def agents_run_stream(job_id: int, request: Request):
+    """Server-sent events for one job: every step as it happens, then `event: end` when it finishes or fails.
+    Steps already stored are replayed first, so a late or reconnecting viewer sees the whole run."""
+    if not db.one("SELECT 1 FROM jobs WHERE id = ?", (job_id,)):
+        raise HTTPException(404, "Job not found")
+    try:
+        after = int(request.headers.get("last-event-id") or 0)
+    except ValueError:
+        after = 0
+    qu = events.subscribe()
+
+    def frame(ev: dict) -> str:
+        return f"id: {ev['id']}\ndata: {json.dumps(ev)}\n\n"
+
+    def gen():
+        last = after
+        try:
+            yield "retry: 3000\n\n"
+            for ev in events.recent(5000, job_id):
+                if ev["id"] <= last:
+                    continue
+                last = ev["id"]
+                yield frame(ev)
+                if _terminal(ev):
+                    yield "event: end\ndata: {}\n\n"
+                    return
+            idle = 0
+            while True:
+                try:
+                    ev = qu.get(timeout=1)
+                except queue.Empty:
+                    j = db.one("SELECT status FROM jobs WHERE id = ?", (job_id,))
+                    if not j or j["status"] != "running":
+                        for ev in events.recent(5000, job_id):
+                            if ev["id"] > last:
+                                last = ev["id"]
+                                yield frame(ev)
+                        yield "event: end\ndata: {}\n\n"
+                        return
+                    idle += 1
+                    if idle % 15 == 0:
+                        yield ": ping\n\n"
+                    continue
+                if ev.get("job_id") != job_id or ev["id"] <= last:
+                    continue
+                last = ev["id"]
+                yield frame(ev)
+                if _terminal(ev):
+                    yield "event: end\ndata: {}\n\n"
+                    return
+        finally:
+            events.unsubscribe(qu)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
 # ---------------------------------------------------------------- Fast Track (student game)
 
 @app.get("/api/ft/courses")
@@ -715,6 +827,46 @@ def ft_facilitator(cid: int):
     """Coverage, where the class stopped, the next lesson, and each learner's track plan."""
     _course(cid)
     return facilitate.summary(cid)
+
+
+@app.post("/api/principal/chat")
+def principal_chat_endpoint(request: Request, messages: list[dict] = Body(..., embed=True), course_id: int | None = Body(None, embed=True)):
+    """The Principal answers the facilitator from the class's own records, worded by the saved model."""
+    from .agents import principal_chat
+    llm, notice = ai_gate.for_action(request.client.host if request.client else None)   # one question = one action
+    try:
+        out = principal_chat.chat(course_id, messages, llm)
+        return {**out, "notice": notice} if notice else out
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:                                  # noqa: BLE001 - provider errors, scrubbed of the key
+        f = principal_chat.facts(principal_chat._course_id(course_id)) if principal_chat._course_id(course_id) else None
+        last = next((m.get("content", "") for m in reversed(messages or []) if m.get("role") != "assistant"), "")
+        return {"reply": (principal_chat.offline_answer(str(last), f) if f else "I can't reach the model right now."),
+                "online": False, "error": _scrub(str(e), llm.api_key)[:300], "course_id": f and f["course"]["id"]}
+
+
+@app.post("/api/principal/chat/stream")
+async def principal_chat_stream(request: Request):
+    """The same Principal, speaking the Vercel AI SDK UI message stream protocol (SSE) for useChat:
+    a tool part naming the records it read, the answer as text deltas, then finish and [DONE]."""
+    from .agents import principal_chat
+    try:
+        body = await request.json()
+    except Exception:                                       # noqa: BLE001
+        raise HTTPException(400, "Send JSON")
+    course_id = body.get("course_id") if isinstance(body, dict) else None
+    messages = body.get("messages") if isinstance(body, dict) else None
+    llm, notice = ai_gate.for_action(request.client.host if request.client else None)   # one question = one action
+
+    def gen():
+        for part in principal_chat.stream_parts(course_id if isinstance(course_id, int) else None, messages or [],
+                                                llm, notice, scrub=lambda s: _scrub(s, llm.api_key)):
+            yield f"data: {json.dumps(part)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={**SSE_HEADERS, "x-vercel-ai-ui-message-stream": "v1"})
 
 
 @app.get("/api/ft/{cid}/student/{lid}")
@@ -870,15 +1022,15 @@ def demo_file(name: str):
 # --- dev notes: live feedback from the Note button --------------------------------------------
 @app.get("/api/dev-notes")
 def dev_notes_list():
-    return {"enabled": devnotes.enabled() and not mode.public(), "notes": devnotes.list_notes()}
+    return {"enabled": devnotes.enabled(), "public": mode.public(), "notes": devnotes.list_notes()}
 
 
 @app.post("/api/dev-notes")
-def dev_notes_create(data: dict = Body(...)):
-    if mode.public():
-        raise HTTPException(403, "Notes are off on the public demo.")
+def dev_notes_create(request: Request, data: dict = Body(...)):
     try:
-        return devnotes.create(data)
+        return devnotes.create(data, request.client.host if request.client else None)
+    except devnotes.RateLimited as e:
+        raise HTTPException(429, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -893,6 +1045,8 @@ def dev_notes_get(nid: int):
 
 @app.patch("/api/dev-notes/{nid}")
 def dev_notes_update(nid: int, data: dict = Body(...)):
+    if mode.public():
+        raise HTTPException(403, "Notes can't be changed on the public demo.")
     try:
         n = devnotes.update(nid, data)
     except ValueError as e:

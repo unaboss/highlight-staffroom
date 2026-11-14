@@ -6,7 +6,7 @@ here with the reason, and the Teacher fixes or removes it (at most twice).
 
 import re
 
-from ..textutil import CITE_RE, content_words, sentences, strip_cites
+from ..textutil import CITE_RE, content_words, overlap, sentences, strip_cites
 from .librarian import format_passages
 
 LEVELS = {1: "Recall", 2: "Explain", 3: "Apply", 4: "Analyse", 5: "Evaluate"}
@@ -194,6 +194,130 @@ def revise_lesson(plan: dict, issues: list[dict], passages: list[dict], llm, emi
         plan["worked_example"] = ""
     plan["check_questions"] = [c for k, c in enumerate(plan["check_questions"], 1) if f"q{k}" not in bad]
     return plan
+
+
+# ---------------------------------------------------------------- self-correction, line by line
+
+REWRITE_SYSTEM = """You are the same subject teacher. The examiner caught ONE line of your lesson that the
+cited passage does not support. Rewrite that line so every fact in it comes from the passages, and end it
+with the [P#] of the passage that supports it. Keep it one or two sentences, in a teacher's voice.
+Reply: {"line": "<the rewritten line ending with [P#]>"}"""
+
+SEED_ID = "e2"
+
+
+def seed_ungrounded(plan: dict, topic: str, passages: list[dict]) -> dict:
+    """Demo mode: slip one plausible but ungrounded line into the first draft, as a model might,
+    so the Examiner always has something real to catch on stage. It cites a real passage."""
+    n = passages[0]["n"]
+    line = (f"{topic.strip() or 'This topic'} was first standardised in 1987 by a European committee, "
+            f"which made it compulsory for every company worldwide. [P{n}]")
+    plan = {**plan, "explanation": list(plan.get("explanation") or [])}
+    plan["explanation"].insert(1 if plan["explanation"] else 0, line)
+    return plan
+
+
+def get_line(plan: dict, item_id: str) -> str:
+    kind, k = item_id[0], int(item_id[1:]) - 1
+    if kind == "o":
+        return plan["objectives"][k]
+    if kind == "e":
+        return plan["explanation"][k]
+    if kind == "x":
+        return plan["worked_example"]
+    if kind == "q":
+        return plan["check_questions"][k]["answer"]
+    raise KeyError(item_id)
+
+
+def set_line(plan: dict, item_id: str, text: str) -> dict:
+    plan = {**plan, "objectives": list(plan["objectives"]), "explanation": list(plan["explanation"]),
+            "check_questions": [dict(c) for c in plan["check_questions"]]}
+    kind, k = item_id[0], int(item_id[1:]) - 1
+    if kind == "o":
+        plan["objectives"][k] = text
+    elif kind == "e":
+        plan["explanation"][k] = text
+    elif kind == "x":
+        plan["worked_example"] = text
+    elif kind == "q":
+        plan["check_questions"][k]["answer"] = text
+    return plan
+
+
+def _used_sentences(plan: dict) -> set[str]:
+    lines = plan["objectives"] + plan["explanation"] + [plan["worked_example"]] + [c["answer"] for c in plan["check_questions"]]
+    return {strip_cites(t).strip() for t in lines}
+
+
+def best_sentence(claim: str, passages: list[dict], prefer: list[int], avoid: set[str]) -> tuple[str, int] | tuple[None, None]:
+    """The passage sentence that best carries the line's idea: the cited passage first, then any passage."""
+    def ranked(ps):
+        out = []
+        for p in ps:
+            for s in sentences(p["text"]):
+                if len(s.split()) >= 5 and s.strip() not in avoid:
+                    out.append((overlap(claim, f"{p.get('section', '')} {s}"), s.strip(), p["n"]))
+        return sorted(out, key=lambda x: -x[0])
+    cited = ranked([p for p in passages if p["n"] in prefer])
+    if cited and cited[0][0] >= 0.3:
+        return cited[0][1], cited[0][2]
+    anywhere = ranked(passages)
+    if anywhere:
+        return anywhere[0][1], anywhere[0][2]
+    return None, None
+
+
+def rewrite_line(item: dict, passages: list[dict], plan: dict, llm, check) -> tuple[str | None, str]:
+    """Rewrite one caught line. Online: ask the model, keep its line only if the citation check passes.
+    Offline (or the model's line still fails): rebuild it from the best supporting passage sentence."""
+    before = item["text"] if item["id"][0] != "q" else get_line(plan, item["id"])
+    claim = strip_cites(item.get("claim") or before)
+    if item["id"][0] == "o":
+        claim = re.sub(r"^\s*(learners|students|you)\s+(can|will|should|are able to)\s+\w+\s+", "", claim, flags=re.I)
+    if llm.online:
+        try:
+            out = llm.json(REWRITE_SYSTEM, f"Passages:\n{format_passages(passages)}\n\nLine: {before}\n"
+                                           f"Examiner's reason: {item.get('reason', '')}", max_tokens=400)
+            line = str(out.get("line") or "").strip()
+            if line and CITE_RE.search(line) and check(line)["supported"]:
+                return line, "model"
+        except Exception:                      # noqa: BLE001 - fall back to the extractive rewrite
+            pass
+    sent, n = best_sentence(claim, passages, item.get("cites") or [], _used_sentences(plan))
+    if not sent:
+        return None, "none"
+    if item["id"][0] == "o":
+        return f"Learners can explain that {lower_first(sent).rstrip('.')} [P{n}]", "passage"
+    return f"{sent} [P{n}]", "passage"
+
+
+def rewrite_lines(plan: dict, issues: list[dict], passages: list[dict], llm, emit, check) -> dict:
+    """Fix each line the Examiner sent back, one at a time; a line with nothing to rebuild from is removed."""
+    emit("Subject Teacher", "work", f"Rewriting {len(issues)} line(s) the Examiner sent back, from the passages")
+    drop = []
+    for it in issues:
+        before = get_line(plan, it["id"])
+        after, how = rewrite_line(it, passages, plan, llm, check)
+        if not after:
+            drop.append(it["id"])
+            emit("Subject Teacher", "warn", f"Nothing in the notes supports “{strip_cites(before)[:90]}”: removed it",
+                 {"id": it["id"], "before": before})
+            continue
+        plan = set_line(plan, it["id"], after)
+        emit("Subject Teacher", "rewritten", f"Rewrote {it['id']}: “{strip_cites(after)[:110]}”",
+             {"id": it["id"], "before": before, "after": after, "cites": [int(c) for c in CITE_RE.findall(after)],
+              "old_cites": it.get("cites") or [], "how": how})
+    if drop:
+        plan = revise_lesson(plan, [i for i in issues if i["id"] in drop], passages, _OFFLINE, emit)
+    return plan
+
+
+class _Offline:
+    online = False
+
+
+_OFFLINE = _Offline()
 
 
 # ---------------------------------------------------------------- tests

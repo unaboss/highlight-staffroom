@@ -96,3 +96,75 @@ def review(course_id: int, session_id: int, session_report: dict, lesson: dict, 
     if not flags:
         emit("Counsellor", "done", "Nobody needs a follow-up after this class")
     return flags
+
+
+# ---------------------------------------------------------------- catch-up plan (dev note 39)
+
+PLAN_SYSTEM = """You are the Counsellor in a school staffroom. A facilitator is behind (or ahead of) the pace
+needed to finish the course notes before the exam. Using ONLY the facts given, write a short, practical plan
+for what to do next to move forward. Name real numbers from the facts. Never invent learners, topics or dates.
+JSON shape: {"headline": "one sentence", "steps": [{"title": "a few words", "detail": "one or two sentences"}]}
+Give 3 to 5 steps."""
+
+
+def _fact_lines(f: dict) -> str:
+    lines = [f"Class is {f['class_pct']}% through the notes; by the straight pace to the exam it should be {f['should_be_pct']}%.",
+             f"{f['passages_left']} passages of notes left, {f['classes_left']} class slots before the exam "
+             f"({f.get('days_to_exam')} days).",
+             f"Classes so far averaged {f['per_class']} passages; finishing needs "
+             f"{f['needed_per_class'] if f['needed_per_class'] is not None else 'more than the slots left allow'} a class."]
+    if f.get("learner_pct") is not None:
+        lines.append(f"The average learner is {f['learner_pct']}% through the notes on their own Fast Track ({f['learners']} learners).")
+    if f.get("behind"):
+        lines.append("Learners behind the class: " + ", ".join(f"{b['name']} ({b['pct']}%)" for b in f["behind"]) + ".")
+    if f.get("weak_topics"):
+        lines.append("Topics where most learners are weak: " + ", ".join(f["weak_topics"]) + ".")
+    return "\n".join(lines)
+
+
+def _offline_plan(f: dict) -> dict:
+    gap = round(f["should_be_pct"] - f["class_pct"], 1)
+    need, per = f["needed_per_class"], f["per_class"]
+    steps = []
+    if need is None:
+        steps.append({"title": "Ask for extra slots", "detail": f"{f['passages_left']} passages are left and no class "
+                      "slots remain before the exam. Book catch-up sessions or move revision into self-study now."})
+    elif per and need > per:
+        steps.append({"title": f"Teach {need} passages a class", "detail": f"Classes have averaged {per}. Cover "
+                      f"{need} a class for the {f['classes_left']} slots left, or the notes won't be finished by the exam."})
+    else:
+        steps.append({"title": f"Hold {need} passages a class", "detail": f"That finishes the notes in the "
+                      f"{f['classes_left']} slots left; the class has averaged {per or 0}."})
+    if gap > 0:
+        steps.append({"title": "Trim the next decks", "detail": f"The class is {gap} points behind the straight pace. "
+                      "Cut slides on sections the transcript shows were already covered, and set the rest as reading."})
+    else:
+        steps.append({"title": "Use the time you've gained", "detail": f"The class is {abs(gap)} points ahead of the "
+                      "straight pace. Spend it on the chapters learners find hardest."})
+    lp = f.get("learner_pct")
+    if lp is not None and lp < f["class_pct"]:
+        steps.append({"title": "Close the learner gap", "detail": f"The average learner is at {lp}% on Fast Track while "
+                      f"the class is at {f['class_pct']}%. Give ten minutes at the end of each class to the ladder."})
+    if f.get("behind"):
+        names = ", ".join(b["name"] for b in f["behind"][:3])
+        steps.append({"title": "Check in with who's behind", "detail": f"Start with {names}: they are furthest behind "
+                      "the class. Approve a personal test for each from the class page."})
+    if f.get("weak_topics"):
+        steps.append({"title": "Revise the weak chapters", "detail": "Most learners are weak on "
+                      + ", ".join(f["weak_topics"][:2]) + ". Open the next lesson with a short recap of these."})
+    head = (f"The class is {gap} points behind the pace it needs." if gap > 0
+            else f"The class is on pace ({f['class_pct']}% of the notes, {f['should_be_pct']}% needed by today).")
+    return {"headline": head, "steps": steps[:5]}
+
+
+def catch_up_plan(facts: dict, llm) -> dict:
+    """What to do next to move forward. With a model the Counsellor writes it from the facts; without one
+    (or when the reply is unusable) it is worked out in code from the same numbers."""
+    if llm.online:
+        out = llm.json(PLAN_SYSTEM, _fact_lines(facts), max_tokens=900)
+        steps = [s for s in (out.get("steps") or []) if isinstance(s, dict) and s.get("title") and s.get("detail")]
+        if out.get("headline") and len(steps) >= 2:
+            return {"headline": str(out["headline"]), "steps": [{"title": str(s["title"]), "detail": str(s["detail"])}
+                                                                 for s in steps[:5]],
+                    "facts": _fact_lines(facts), "online": True, "model": llm.model}
+    return {**_offline_plan(facts), "facts": _fact_lines(facts), "online": False}

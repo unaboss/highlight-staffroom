@@ -163,7 +163,8 @@ def get_setting(key: str, default: str = "") -> str:
     row = one("SELECT value FROM settings WHERE key = ?", (key,))
     if row and row["value"]:
         return row["value"]
-    return os.environ.get(key.upper(), default)
+    alias = {"nebius_api_key": "LLM_API_KEY", "nebius_base_url": "LLM_BASE_URL", "nebius_model": "LLM_MODEL"}.get(key)
+    return os.environ.get(key.upper()) or (alias and os.environ.get(alias)) or default
 
 
 def set_setting(key: str, value: str) -> None:

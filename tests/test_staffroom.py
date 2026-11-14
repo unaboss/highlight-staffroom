@@ -473,7 +473,7 @@ def test_demo_mode_bootstrap_and_public_lockdown(monkeypatch):
     assert mode.bootstrap()["course_id"] == cid                             # runs again without duplicating
     assert c.post("/api/settings/model", json={"api_key": "x"}).status_code == 403
     assert c.post("/api/settings", json={"clickup_token": "x"}).status_code == 403
-    assert b"dev-notes.js" not in c.get("/lms").content
+    assert b"dev-notes.js" in c.get("/lms").content                              # the public notes demo shows the Note button
     h = c.get("/api/health").json()
     assert h["mode"] == {"demo": True, "public": True} and h["course"] == "Network Security Fundamentals"
 
@@ -504,3 +504,154 @@ def test_detect_model_finds_provider_and_never_returns_key(monkeypatch):
     monkeypatch.setattr(httpx, "get", lambda url, headers=None, timeout=None: (seen.append(url), httpx.Response(401, json={"error": {"message": f"bad key {secret}"}}))[1])
     r = c.post("/api/settings/model/detect", json={"provider": "auto", "api_key": "sk-or-" + secret}).json()
     assert not r["ok"] and seen[0].startswith("https://openrouter.ai") and secret not in r["error"]
+
+
+def test_principal_chat_offline_and_with_a_model(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.agents import principal_chat
+    cid = demo.seed(TODAY)
+    c = TestClient(main.app)
+    assert c.post("/api/principal/chat", json={"messages": []}).status_code == 400
+
+    r = c.post("/api/principal/chat", json={"course_id": cid, "messages": [{"role": "user", "content": "Are we on track?"}]}).json()
+    assert not r["online"] and r["course_id"] == cid and "exam" in r["reply"].lower()
+    r = c.post("/api/principal/chat", json={"course_id": cid, "messages": [{"role": "user", "content": "Any tests waiting?"}]}).json()
+    assert "test" in r["reply"].lower()
+
+    seen = {}
+
+    class Talker:
+        def __init__(self):
+            self.chat = SimpleNamespace(completions=self)
+
+        def create(self, model, temperature, max_tokens, messages):
+            seen["messages"] = messages
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="<think>x</think>All good."))])
+
+    monkeypatch.setattr(main, "get_llm", lambda: LLM(api_key="test", client=Talker()))
+    from app import ai_gate
+    monkeypatch.setattr(ai_gate, "get_llm", lambda public_ok=False: LLM(api_key="test", client=Talker()))
+    hist = [{"role": "assistant", "content": "hello"}, {"role": "user", "content": "How is the class?"}]
+    r = c.post("/api/principal/chat", json={"course_id": cid, "messages": hist}).json()
+    assert r == {"reply": "All good.", "online": True, "course_id": cid, "model": "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5"}
+    sys_msg = seen["messages"][0]["content"]
+    assert "Principal" in sys_msg and "SCHOOL BRIEF" in sys_msg and "Days to exam" in sys_msg
+    assert seen["messages"][1] == {"role": "user", "content": "How is the class?"}     # leading assistant turn dropped
+    assert "Learner track plans" in principal_chat.brief(principal_chat.facts(cid))
+
+    class Broken(Talker):
+        def create(self, *a, **k):
+            raise RuntimeError("bad key sk-secret123456789")
+
+    monkeypatch.setattr(main, "get_llm", lambda: LLM(api_key="sk-secret123456789", client=Broken()))
+    monkeypatch.setattr(ai_gate, "get_llm", lambda public_ok=False: LLM(api_key="sk-secret123456789", client=Broken()))
+    r = c.post("/api/principal/chat", json={"course_id": cid, "messages": hist}).json()
+    assert not r["online"] and r["reply"] and "secret" not in r["error"]
+
+
+def test_principal_chat_never_uses_a_key_in_public_mode(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import llm as llm_mod, main, mode
+    monkeypatch.setenv("FASTTRACK_DATA", "demo")
+    monkeypatch.setenv("FASTTRACK_PUBLIC", "1")
+    monkeypatch.setenv("NEBIUS_API_KEY", "sk-would-cost-money-0123456789")
+    cid = mode.bootstrap()["course_id"]
+    def no_network(*a, **k):
+        raise AssertionError("public chat must not call the model")
+    monkeypatch.setattr(llm_mod.LLM, "converse", no_network)
+    monkeypatch.setattr(llm_mod.LLM, "chat", no_network)
+    r = TestClient(main.app).post("/api/principal/chat", json={"course_id": cid, "messages": [{"role": "user", "content": "Who is behind?"}]})
+    assert r.status_code == 200 and r.json()["reply"] and not r.json().get("online")
+
+
+def _public_ai_env(monkeypatch, **caps):
+    from app import ai_gate
+    monkeypatch.setenv("FASTTRACK_DATA", "demo")
+    monkeypatch.setenv("FASTTRACK_PUBLIC", "1")
+    monkeypatch.setenv("FASTTRACK_PUBLIC_AI", "1")
+    monkeypatch.setenv("NEBIUS_API_KEY", "sk-test-public-ai-0123456789")
+    for k, v in caps.items():
+        monkeypatch.setenv(k, str(v))
+    ai_gate.reset()
+
+
+def test_public_ai_counts_actions_and_falls_back_calmly_at_the_cap(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import ai_gate, llm as llm_mod, main, mode
+    _public_ai_env(monkeypatch, FASTTRACK_AI_PER_IP_HOUR=2)
+    cid = mode.bootstrap()["course_id"]
+    calls = []
+
+    def fake_converse(self, system, messages, max_tokens=800, temperature=0.3):
+        calls.append(max_tokens); self.tokens += 50
+        return "Live answer from the model."
+    monkeypatch.setattr(llm_mod.LLM, "converse", fake_converse)
+    c = TestClient(main.app)
+    ask = lambda: c.post("/api/principal/chat", json={"course_id": cid, "messages": [{"role": "user", "content": "Who is behind?"}]}).json()
+    a, b, third = ask(), ask(), ask()
+    assert a["online"] and b["online"] and len(calls) == 2            # one question = one action
+    assert not third["online"] and third["notice"] == ai_gate.LIMIT_NOTICE and third["reply"]   # calm offline fallback
+    assert ai_gate.usage()["actions_today"] == 2 and ai_gate.usage()["tokens_today"] == 100
+
+
+def test_public_ai_day_and_token_caps(monkeypatch):
+    from app import ai_gate
+    _public_ai_env(monkeypatch, FASTTRACK_AI_PER_DAY=1)
+    llm, note = ai_gate.for_action("1.1.1.1")
+    assert llm.online and note is None
+    llm, note = ai_gate.for_action("2.2.2.2")                         # another visitor, but the day is used up
+    assert not llm.online and note == ai_gate.LIMIT_NOTICE
+    _public_ai_env(monkeypatch, FASTTRACK_AI_TOKENS_PER_DAY=10)
+    ai_gate._day.update(date=ai_gate._today(), actions=0, tokens=10)
+    llm, note = ai_gate.for_action("3.3.3.3")
+    assert not llm.online and note == ai_gate.LIMIT_NOTICE
+
+
+def test_public_ai_off_never_calls_the_model_and_clamps_tokens_when_on(monkeypatch):
+    from app import ai_gate, llm as llm_mod
+    _public_ai_env(monkeypatch, FASTTRACK_AI_MAX_TOKENS=300)
+    monkeypatch.setenv("FASTTRACK_PUBLIC_AI", "0")
+    assert not ai_gate.for_action("1.1.1.1")[0].online and not llm_mod.get_llm().online   # no path spends the key
+    monkeypatch.setenv("FASTTRACK_PUBLIC_AI", "1")
+    seen = []
+    monkeypatch.setattr(llm_mod.LLM, "chat", lambda self, s, u, max_tokens=1500, temperature=0.2: seen.append(max_tokens) or "ok")
+    llm, _ = ai_gate.for_action("1.1.1.1")
+    llm.chat("sys", "user", max_tokens=4000)
+    assert seen == [300]
+
+
+def test_public_notes_demo_is_safe(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from pathlib import Path
+    from app import devnotes, main
+    monkeypatch.setenv("FASTTRACK_PUBLIC", "1")
+    monkeypatch.setenv("STAFFROOM_DEV_NOTES_DIR", str(tmp_path / "public-notes"))
+    devnotes._recent.clear()
+    c = TestClient(main.app)
+    assert b"/static/dev-notes.js" in c.get("/lms").content                      # the Note button shows on the demo
+    assert devnotes.root() != devnotes.ROOT                                       # visitor notes never reach the laptop's watcher
+    n = c.post("/api/dev-notes", json={"note": "<b>make it pink</b>", "type": "feature"}).json()
+    assert n["id"] >= devnotes.PUBLIC_FIRST_ID and n["status"] == "new" and n["visitor"]
+    assert n["reply"] == devnotes.QUEUED and n["note"] == "<b>make it pink</b>" and n["type"] == "feature"
+    assert c.patch(f"/api/dev-notes/{n['id']}", json={"status": "done"}).status_code == 403
+    assert c.post("/api/dev-notes", json={"note": "x" * 1001}).status_code == 400  # text cap
+    big = "data:image/png;base64," + "A" * (3 * 1024 * 1024)
+    assert c.post("/api/dev-notes", json={"note": "big", "image": big}).status_code == 400   # 2 MB image cap
+    codes = [c.post("/api/dev-notes", json={"note": f"n{i}"}).status_code for i in range(5)]
+    assert 429 in codes                                                           # 5 a minute per IP
+    js = (Path(main.STATIC) / "dev-notes.js").read_text(encoding="utf-8")
+    assert "${esc(n.note)}" in js and "esc(d)" in js                              # rendered as plain text
+    ids = [x["id"] for x in c.get("/api/dev-notes").json()["notes"]]
+    assert n["id"] in ids
+
+
+def test_public_notes_keep_at_most_200(tmp_path, monkeypatch):
+    from app import devnotes
+    monkeypatch.setenv("FASTTRACK_PUBLIC", "1")
+    monkeypatch.setenv("STAFFROOM_DEV_NOTES_DIR", str(tmp_path / "pn"))
+    monkeypatch.setattr(devnotes, "PUBLIC_KEEP", 3)
+    monkeypatch.setattr(devnotes, "_rate_ok", lambda ip: True)
+    made = [devnotes.create({"note": f"n{i}"}, "1.2.3.4")["id"] for i in range(5)]
+    kept = sorted(int(f.name) for f in (tmp_path / "pn").iterdir())
+    assert kept == made[-3:]                                                      # the oldest go first

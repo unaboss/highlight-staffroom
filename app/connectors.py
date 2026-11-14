@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import secrets
 import threading
 import time
@@ -28,7 +29,7 @@ import httpx
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from . import db, events, fasttrack, mode
+from . import db, events, fasttrack, google_auth, mode
 from .integrations import clickup as cu_mod
 from .integrations.meet import Meet, MeetError
 from .integrations.moodle import Moodle, MoodleError
@@ -68,8 +69,12 @@ def _scrub(msg, *keys: str) -> str:
 
 
 def live(name: str) -> bool:
+    """Live = credentials are saved. On a public deployment every connector stays in demo mode
+    (visitors must never reach the owner's accounts) unless FASTTRACK_PUBLIC_CONNECTORS=1."""
+    if not google_auth.allowed():
+        return False
     if name == "meet":
-        return bool(db.get_setting("google_access_token"))
+        return google_auth.signed_in() or bool(db.get_setting("google_access_token"))
     if name == "moodle":
         return bool(db.get_setting("moodle_url") and db.get_setting("moodle_token"))
     if name == "clickup":
@@ -342,9 +347,11 @@ def import_meet(course_id: int, meeting_code: str = "") -> dict:
         if not code:
             raise HTTPException(400, "Type the class's Meet code (like abc-defg-hij)")
         try:
-            entries, att, rec = Meet(db.get_setting("google_access_token")).class_data(code)
-        except MeetError as e:
-            raise HTTPException(502, _scrub(e, db.get_setting("google_access_token")))
+            tok = google_auth.access_token()
+            entries, att, rec = Meet(tok).class_data(code)
+        except (MeetError, google_auth.GoogleAuthError) as e:
+            raise HTTPException(502, _scrub(e, db.get_setting("google_access_token"),
+                                            db.get_setting("google_oauth_access")))
         source, held = f"meet:{rec.get('name', '')}", (rec.get("startTime") or "")[:10] or None
     else:
         vtt, csv_text = demo.demo_class()
@@ -361,21 +368,46 @@ def import_meet(course_id: int, meeting_code: str = "") -> dict:
 # ---------------------------------------------------------------- tests
 
 def test(name: str) -> dict:
+    """Run the check and remember the outcome, so Settings can show "Connected, checked 10:42"."""
+    res = _test(name)
+    res["at"] = _now()
+    if not mode.public():
+        db.set_setting(f"conn_check_{name}", json.dumps(res))
+    return res
+
+
+def last_check(name: str) -> dict | None:
+    raw = db.get_setting(f"conn_check_{name}")
+    try:
+        c = json.loads(raw) if raw else None
+    except ValueError:
+        return None
+    # A check from before the credentials changed (e.g. a demo check, then a key saved) is stale.
+    if c and c.get("mode") != ("live" if live(name) else "demo"):
+        return None
+    return c
+
+
+def _test(name: str) -> dict:
     t0 = time.time()
     ms = lambda: round((time.time() - t0) * 1000)      # noqa: E731
     if not live(name):
-        return {"ok": True, "mode": "demo", "message": "No credentials saved, so this runs in demo mode with sample data."}
+        why = ("Connectors stay in demo mode on the public site." if not google_auth.allowed()
+               else "No credentials saved, so this runs in demo mode with sample data.")
+        return {"ok": True, "mode": "demo", "message": why}
     try:
         if name == "meet":
-            tok = db.get_setting("google_access_token")
+            tok = google_auth.access_token()
             r = httpx.get("https://meet.googleapis.com/v2/conferenceRecords", params={"pageSize": 1},
                           headers={"Authorization": f"Bearer {tok}"}, timeout=10)
             if r.status_code >= 400:
                 msg = (r.json().get("error") or {}).get("message", "") if r.headers.get("content-type", "").startswith("application/json") else ""
                 return {"ok": False, "mode": "live", "message": f"Google said {r.status_code}. {_scrub(msg, tok)}".strip()}
             n = len(r.json().get("conferenceRecords", []))
+            who = db.get_setting("google_account") if google_auth.signed_in() else ""
             return {"ok": True, "mode": "live", "ms": ms(),
-                    "message": "Token works. " + ("Found recent Meet calls." if n else "No finished calls yet.")}
+                    "message": (f"Signed in as {who}. " if who else "Token works. ")
+                    + ("Found recent Meet calls." if n else "No finished Meet calls yet.")}
         if name == "moodle":
             info = _moodle().call("core_webservice_get_site_info")
             fns = {f.get("name") for f in info.get("functions", [])}
@@ -388,7 +420,8 @@ def test(name: str) -> dict:
             return {"ok": True, "mode": "live", "ms": ms(),
                     "message": f"Token works. Workspace: {teams[0]['name'] if teams else 'none visible'}."}
     except Exception as e:                               # noqa: BLE001 - shown to the user
-        keys = [db.get_setting(k) for k in ("google_access_token", "moodle_token", "clickup_token")]
+        keys = [db.get_setting(k) for k in ("google_access_token", "google_oauth_access", "moodle_token",
+                                            "clickup_token")]
         return {"ok": False, "mode": "live", "message": _scrub(e, *keys)}
     raise HTTPException(404, "Unknown connector")
 
@@ -408,6 +441,9 @@ def status(course_id: int | None = None) -> dict:
         "read_only": mode.public(),
         "course": c,
         "config": {k: db.get_setting(k) for k in sorted(CONFIG_KEYS)},
+        "public_connectors": google_auth.allowed(),
+        "checks": {n: last_check(n) for n in ("meet", "moodle", "clickup")},
+        "google": google_auth.info(),
         "meet": {"mode": "live" if live("meet") else "demo", "last": last_meet},
         "moodle": {"mode": "live" if live("moodle") else "demo", "grades": grades,
                    "learners": db.q("SELECT id, name FROM learners WHERE course_id = ? ORDER BY id", (cid,)) if cid else [],

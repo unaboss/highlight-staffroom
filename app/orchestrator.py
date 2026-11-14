@@ -1,6 +1,7 @@
 """Runs the agents as jobs. Each job is a chain of hand-offs, and every step is streamed as an event."""
 
 import threading
+import time
 import traceback
 from datetime import datetime, timezone
 
@@ -9,6 +10,7 @@ from .agents import counsellor, examiner, librarian, observer, principal, teache
 from .events import Emitter
 from .integrations import clickup
 from .llm import get_llm
+from .textutil import cites, strip_cites
 
 MAX_SEND_BACKS = 2
 
@@ -104,8 +106,20 @@ def job_plan_course(emit, course_id: int) -> dict:
     return {"lessons": len(lessons)}
 
 
-def job_prepare_lesson(emit, lesson_id: int) -> dict:
-    llm = get_llm()
+def job_prepare_lesson(emit, lesson_id: int, llm=None, seed: bool = False, pace: float = 0) -> dict:
+    """Librarian -> Subject Teacher -> Examiner, with line-by-line self-correction.
+
+    seed=True (the demo run) slips one plausible but ungrounded line into the first draft so the
+    Examiner always has a real catch to show: caught -> sent back -> rewritten -> re-checked.
+    pace > 0 waits that many seconds after each step so an offline run can be watched live."""
+    if pace > 0:
+        inner = emit
+
+        def emit(*a, **k):                                 # noqa: F811 - same emitter, slowed for the stage
+            ev = inner(*a, **k)
+            time.sleep(pace)
+            return ev
+    llm = llm or get_llm()
     lesson = db.one("SELECT l.*, t.title AS topic, t.keywords FROM lessons l LEFT JOIN topics t ON t.id = l.topic_id "
                     "WHERE l.id = ?", (lesson_id,))
     course = db.one("SELECT * FROM courses WHERE id = ?", (lesson["course_id"],))
@@ -121,15 +135,43 @@ def job_prepare_lesson(emit, lesson_id: int) -> dict:
         emit("Librarian", "warn", "No course material matches this topic. Upload notes for it first.")
         return {"lesson_id": lesson_id, "verdict": "no material"}
     plan = teacher.write_lesson(lesson["topic"], lesson["title"], passages, llm, emit)
-    review, rounds = None, 0
+    if seed:
+        plan = teacher.seed_ungrounded(plan, lesson["topic"] or lesson["title"], passages)
+    for it in teacher.lesson_items(plan):                 # the plan document, line by line, as it is written
+        emit("Subject Teacher", "drafted", strip_cites(it["text"])[:140],
+             {"id": it["id"], "section": it["kind"], "line": it["text"], "cites": cites(it["text"])})
+    review, rounds, caught, fixed, pending = None, 0, 0, 0, {}
     while True:
         review = examiner.check(teacher.lesson_items(plan), passages, llm, emit, "lesson statements")
+        verdicts = {r["id"]: r for r in review["items"]}
+        if rounds == 0:
+            for r in review["items"]:
+                emit("Examiner", "checked", f"{r['id']}: {r['verdict']} ({int(r['grounding'] * 100)}% grounded)",
+                     {"id": r["id"], "line": r["text"], "verdict": r["verdict"], "supported": r["verdict"] == examiner.SUPPORTED,
+                      "grounding": r["grounding"], "reason": r["reason"], "cites": r["cites"]})
+        for item_id, before in pending.items():          # the Examiner re-checks every rewritten line
+            r = verdicts.get(item_id)
+            ok = bool(r and r["verdict"] == examiner.SUPPORTED)
+            fixed += ok
+            emit("Examiner", "rechecked", f"{item_id}: {r['verdict'] if r else 'removed'} on re-check",
+                 {"id": item_id, "line": r["text"] if r else None, "before": before,
+                  "verdict": r["verdict"] if r else "Removed", "supported": ok,
+                  "grounding": r["grounding"] if r else None, "reason": r["reason"] if r else ""})
+        pending = {}
         if review["verdict"] == "pass" or rounds >= MAX_SEND_BACKS:
             break
         rounds += 1
+        for r in review["issues"]:
+            caught += 1
+            emit("Examiner", "caught", f"Caught {r['id']}: {r['reason']}",
+                 {"id": r["id"], "line": r["text"], "verdict": r["verdict"], "reason": r["reason"],
+                  "grounding": r["grounding"], "cites": r["cites"]})
+            pending[r["id"]] = r["text"]
         emit("Examiner", "handoff", f"Sending {len(review['issues'])} item(s) back to the Subject Teacher "
-             f"(round {rounds} of {MAX_SEND_BACKS})")
-        plan = teacher.revise_lesson(plan, review["issues"], passages, llm, emit)
+             f"(round {rounds} of {MAX_SEND_BACKS})", {"ids": [r["id"] for r in review["issues"]], "round": rounds,
+                                                       "sent_back": True})
+        plan = teacher.rewrite_lines(plan, review["issues"], passages, llm, emit,
+                                     lambda line: examiner.citation_check(line, passages))
     verdict = "Passed" if review["verdict"] == "pass" else "Flagged for teacher"
     if verdict != "Passed":
         emit("Examiner", "warn", f"Still {len(review['issues'])} issue(s) after {MAX_SEND_BACKS} rounds: "
@@ -156,7 +198,8 @@ def job_prepare_lesson(emit, lesson_id: int) -> dict:
             _safe(emit, "Verdict field", lambda: cu.set_field(lists["lessons"], tid, "verdict", verdict))
     emit("Staffroom", "pass" if verdict == "Passed" else "warn",
          f"Lesson plan {verdict.lower()}: ready for the teacher", {"lesson_id": lesson_id})
-    return {"lesson_id": lesson_id, "verdict": verdict, "rounds": rounds}
+    return {"lesson_id": lesson_id, "verdict": verdict, "rounds": rounds, "caught": caught, "fixed": fixed,
+            "plan": plan}
 
 
 def _test_passages(course_id: int, targets: list[dict], llm, emit) -> tuple[list[dict], list[dict]]:

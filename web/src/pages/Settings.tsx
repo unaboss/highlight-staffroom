@@ -1,10 +1,11 @@
-/* Settings for school owners and facilitators: the AI model the agents use (one source of truth
+/* Settings for facilitators: the AI model the agents use (one source of truth
    with /staffroom) and the Google Meet, Moodle and ClickUp connections. A saved key is never sent
    back to the browser; only its last four characters are shown. */
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Icon } from "@/components/ui/kit";
 import { cn } from "@/lib/utils";
+import { LoadError, SkeletonCard, Spinner } from "@/components/ui/loading";
 import Connectors from "@/pages/Connectors";
 
 type Preset = { label: string; base_url: string; model: string };
@@ -25,7 +26,7 @@ export default function Settings() {
       <a href="/fast-track/" className="inline-flex items-center gap-1.5 text-sm text-pink-300 hover:underline"><span className="rotate-180">{Icon.arrow}</span>Back</a>
       <h1 className="mt-4 text-display">Settings</h1>
       <p className="mt-2 max-w-[62ch] text-body text-pink-200/80">The AI model the staff agents think with, and the tools they read from. Keys stay on this server; the page only ever shows their last four characters.</p>
-      {ro && <p role="note" className="mt-6 rounded-xl border border-dashed border-pink-300/40 px-4 py-3 text-body text-pink-100">This is the public demo, so settings are read-only. Run Staffroom yourself to add your own API key and connections.</p>}
+      {ro && <p role="note" className="mt-6 rounded-xl border border-dashed border-pink-300/40 px-4 py-3 text-body text-pink-100">This is the public demo, so settings are read-only. Run Classroom Fast Track yourself to add your own API key and connections.</p>}
       <fieldset disabled={ro} className="contents"><ModelSection /></fieldset><Connectors readOnly={ro} />
     </>
   );
@@ -76,8 +77,8 @@ function ModelSection() {
     catch (e: any) { setTest({ ok: false, error: String(e.message || e) }); } finally { setBusy(""); }
   };
 
-  if (err && !m) return <div className="glass mt-8 p-6">Couldn't load the model settings: {err}</div>;
-  if (!m) return <div className="mt-8 text-pink-200/70">Loading settings…</div>;
+  if (err && !m) return <LoadError className="mt-8" message={err} onRetry={() => { setErr(""); api<ModelState>("/api/settings/model").then(fill).catch((e) => setErr(String(e.message || e))); }} />;
+  if (!m) return <SkeletonCard className="mt-8" lines={5} label="Loading settings" />;
   const opts: [string, string][] = [...Object.entries(m.presets).map(([k, v]) => [k, v.label] as [string, string]), ["custom", "Custom"]];
   const models = found?.ok ? found.models || [] : [];
   return (
@@ -105,12 +106,12 @@ function ModelSection() {
             <div className="flex items-center gap-2">
               <span className={cn(field, "font-mono text-pink-200")}>{m.key_hint}</span>
               <button type="button" className={ghost} onClick={() => { setReplacing(true); setKey(""); }}>Replace</button>
-              <button type="button" className={ghost} disabled={!!busy} onClick={detect} title="Find the provider and its models from the key">{busy === "detect" ? "Detecting…" : "Detect"}</button>
+              <button type="button" className={ghost} disabled={!!busy} onClick={detect} title="Find the provider and its models from the key">{busy === "detect" ? <><Spinner />Detecting…</> : "Detect"}</button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <input className={cn(field, "font-mono")} type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste your key" autoComplete="off" spellCheck={false} />
-              <button type="button" className={ghost} disabled={!!busy || !key.trim()} onClick={detect} title="Find the provider and its models from the key">{busy === "detect" ? "Detecting…" : "Detect"}</button>
+              <button type="button" className={ghost} disabled={!!busy || !key.trim()} onClick={detect} title="Find the provider and its models from the key">{busy === "detect" ? <><Spinner />Detecting…</> : "Detect"}</button>
             </div>
           )}</label>
         <label className="block"><Label>Model</Label>
@@ -131,8 +132,8 @@ function ModelSection() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        {!m.read_only && <button className={primary} disabled={!!busy} onClick={save}>{busy === "save" ? "Saving…" : "Save"}</button>}
-        <button className={ghost} disabled={!!busy} onClick={run}>{busy === "test" ? "Testing…" : "Test connection"}</button>
+        {!m.read_only && <button className={primary} disabled={!!busy} onClick={save}>{busy === "save" ? <><Spinner />Saving…</> : "Save"}</button>}
+        <button className={ghost} disabled={!!busy} onClick={run}>{busy === "test" ? <><Spinner />Testing…</> : "Test connection"}</button>
         {saved && <span className="inline-flex items-center gap-1.5 text-sm text-pink-200">{Icon.check} Saved</span>}
         {err && <span className="text-sm text-pink-200">{err}</span>}
       </div>

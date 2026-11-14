@@ -59,6 +59,7 @@ class LLM:
         self._client = client
         self.calls = 0
         self.seconds = 0.0
+        self.tokens = 0                                 # total tokens the provider reported
 
     @property
     def online(self) -> bool:
@@ -81,7 +82,68 @@ class LLM:
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}])
         self.calls += 1
         self.seconds += time.time() - t0
+        self.tokens += int(getattr(getattr(resp, "usage", None), "total_tokens", 0) or 0)
         return strip_think(resp.choices[0].message.content or "")
+
+    def converse(self, system: str, messages: list[dict], max_tokens: int = 800, temperature: float = 0.3) -> str:
+        """A multi-turn chat: messages are {"role": "user"|"assistant", "content": ...}, oldest first."""
+        while messages and messages[0]["role"] != "user":       # providers want the user to speak first
+            messages = messages[1:]
+        t0 = time.time()
+        resp = self.client().chat.completions.create(
+            model=self.model, temperature=temperature, max_tokens=max_tokens,
+            messages=[{"role": "system", "content": system}, *messages])
+        self.calls += 1
+        self.seconds += time.time() - t0
+        self.tokens += int(getattr(getattr(resp, "usage", None), "total_tokens", 0) or 0)
+        return strip_think(resp.choices[0].message.content or "")
+
+    def converse_stream(self, system: str, messages: list[dict], max_tokens: int = 800, temperature: float = 0.3):
+        """Like converse(), but yields text deltas as the provider streams them. <think> blocks are held back."""
+        while messages and messages[0]["role"] != "user":
+            messages = messages[1:]
+        t0 = time.time()
+        stream = self.client().chat.completions.create(
+            model=self.model, temperature=temperature, max_tokens=max_tokens, stream=True,
+            messages=[{"role": "system", "content": system}, *messages])
+        self.calls += 1
+        buf, thinking, chars = "", False, 0
+        try:
+            for chunk in stream:
+                usage = getattr(chunk, "usage", None)
+                if usage and getattr(usage, "total_tokens", None):
+                    self.tokens += int(usage.total_tokens)
+                    chars = -10 ** 9                       # provider counted; don't estimate
+                choices = getattr(chunk, "choices", None) or []
+                delta = getattr(getattr(choices[0], "delta", None), "content", None) if choices else None
+                if not delta:
+                    continue
+                chars += len(delta)
+                buf += delta
+                while buf:
+                    if thinking:
+                        end = buf.find("</think>")
+                        if end == -1:
+                            buf = buf[-8:]
+                            break
+                        buf, thinking = buf[end + 8:], False
+                    else:
+                        start = buf.find("<think>")
+                        if start == -1:
+                            keep = 7 if "<" in buf[-7:] else 0      # a tag may be split across chunks
+                            out, buf = (buf[:-keep], buf[-keep:]) if keep else (buf, "")
+                            if out:
+                                yield out
+                            break
+                        if start:
+                            yield buf[:start]
+                        buf, thinking = buf[start + 7:], True
+            if buf and not thinking:
+                yield buf
+        finally:
+            if chars > 0:
+                self.tokens += chars // 4 + 1
+            self.seconds += time.time() - t0
 
     def json(self, system: str, user: str, max_tokens: int = 1800) -> dict:
         """Ask for one JSON object; retry once with a reminder if it can't be parsed."""
@@ -93,7 +155,12 @@ class LLM:
         return out
 
 
-def get_llm() -> LLM:
+def get_llm(public_ok: bool = False) -> LLM:
+    """The configured model. On a public deployment it is offline unless the AI gate hands it out
+    (app/ai_gate.py), so no code path can spend the key without being counted."""
+    import os
+    if not public_ok and os.environ.get("FASTTRACK_PUBLIC", "").lower() in ("1", "true", "yes", "on"):
+        return LLM()
     return LLM(api_key=db.get_setting("nebius_api_key"),
                base_url=db.get_setting("nebius_base_url", DEFAULT_BASE_URL),
                model=db.get_setting("nebius_model", DEFAULT_MODEL))

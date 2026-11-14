@@ -29,7 +29,7 @@ export function schoolMarkup(id: string): string {
     `<rect ${S} ${F} x="480" y="246" width="240" height="294"/>`, `<polygon ${S} ${F} points="448,234 600,150 752,234"/>`,
     `<polyline ${S} points="482,226 600,166 718,226"/>`, `<rect ${S} ${F} x="458" y="234" width="284" height="14"/>`,
     `<circle ${S} cx="600" cy="200" r="19"/>`, `<line ${S} x1="600" y1="200" x2="600" y2="188"/>`, `<line ${S} x1="600" y1="200" x2="609" y2="205"/>`,
-    `<rect ${S} x="522" y="262" width="156" height="30" rx="3"/>`, `<text x="600" y="282" text-anchor="middle" class="sign">STAFFROOM</text>`,
+    `<rect ${S} x="522" y="262" width="156" height="30" rx="3"/>`, `<text x="600" y="282" text-anchor="middle" class="sign">CLASSROOM</text>`,
     `<rect ${S} x="490" y="300" width="16" height="240"/>`, `<rect ${S} x="694" y="300" width="16" height="240"/>`,
     `<line ${S} x1="486" y1="300" x2="510" y2="300"/>`, `<line ${S} x1="690" y1="300" x2="714" y2="300"/>`,
     `<rect ${S} x="520" y="320" width="28" height="140" rx="14"/>`, `<rect ${S} x="652" y="320" width="28" height="140" rx="14"/>`,

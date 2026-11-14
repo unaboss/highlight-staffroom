@@ -9,13 +9,15 @@ import { cn } from "@/lib/utils";
 type Mode = "live" | "demo";
 type Task = { id: number; learner: string; name: string; mode: Mode; url: string; status: "open" | "closed"; created_at: string; closed_at: string | null };
 type Grade = { id: number; learner: string; chapter: string; score: number; max: number; mode: Mode; status: string; detail: string; sent_at: string };
+type Check = { ok: boolean; mode: Mode; message: string; ms?: number; at?: string };
+type Google = { client_saved: boolean; signed_in: boolean; account: string; drive: boolean; redirect_path: string; allowed: boolean };
 type Status = {
-  read_only: boolean; course: { id: number; title: string } | null; config: Record<string, string>;
+  read_only: boolean; public_connectors: boolean; checks: Record<string, Check | null>; google: Google; course: { id: number; title: string } | null; config: Record<string, string>;
   meet: { mode: Mode; last: { id: number; source: string; held_on: string } | null };
   moodle: { mode: Mode; grades: Grade[]; learners: { id: number; name: string }[]; chapters: { id: number; title: string }[] };
   clickup: { mode: Mode; tasks: Task[]; open: number; closed: number; flagged: number };
 };
-type TestRes = { ok: boolean; mode: Mode; message: string; ms?: number } | null;
+type TestRes = Check | null;
 type Field = { k: string; label: string; secret?: boolean; config?: boolean; placeholder?: string; hint?: string };
 
 const field = "w-full rounded-xl border border-pink-300/25 bg-[#0c0b0e] px-3.5 py-2.5 text-body text-pink-50 outline-none placeholder:text-pink-200/40 focus:border-pink-300 disabled:opacity-60";
@@ -39,13 +41,17 @@ export default function Connectors({ readOnly }: { readOnly: boolean }) {
       <h2 className="text-h2">Connections</h2>
       <p className="mt-1 max-w-[70ch] text-muted text-pink-200/70">Each tool runs <b className="text-pink-100">live</b> once its key is saved here, and in <b className="text-pink-100">demo</b> mode with sample data until then. Leave a key blank to keep what's saved.</p>
       <div className="mt-4 grid gap-5">
-        <Card id="meet" title="Google Meet" mode={s.meet.mode} ro={ro} keys={keys} cfg={s.config} reload={load}
+        {!s.public_connectors && <p className="rounded-xl border border-dashed border-pink-300/40 px-4 py-3 text-sm text-pink-100">This is the public site, so every connection runs in demo mode with sample data. Nobody here can reach the team's own Google, Moodle or ClickUp accounts.</p>}
+        <Card id="meet" title="Google Meet" mode={s.meet.mode} check={s.checks.meet} ro={ro} keys={keys} cfg={s.config} reload={load}
           blurb="Pulls the class register and transcript after class, then scores each learner's participation."
-          fields={[{ k: "google_access_token", label: "OAuth access token", secret: true, placeholder: "Token with meetings.space.readonly" },
-                   { k: "meet_code", label: "Class Meet code", config: true, placeholder: "abc-defg-hij" }]}>
+          extra={<GoogleSignIn g={s.google} ro={ro} reload={load} />}
+          fields={[{ k: "google_client_id", label: "OAuth client id", placeholder: "…apps.googleusercontent.com" },
+                   { k: "google_client_secret", label: "OAuth client secret", secret: true, placeholder: "GOCSPX-…" },
+                   { k: "meet_code", label: "Class Meet code", config: true, placeholder: "abc-defg-hij" },
+                   { k: "google_access_token", label: "Or paste an access token", secret: true, placeholder: "ya29… (expires after an hour)", hint: "fallback" }]}>
           <MeetPanel s={s} />
         </Card>
-        <Card id="moodle" title="Moodle (LMS)" mode={s.moodle.mode} ro={ro} keys={keys} cfg={s.config} reload={load}
+        <Card id="moodle" title="Moodle (LMS)" mode={s.moodle.mode} check={s.checks.moodle} ro={ro} keys={keys} cfg={s.config} reload={load}
           blurb="A signed link opens Fast Track already signed in as the learner. Final-quiz marks go back to the gradebook."
           fields={[{ k: "moodle_url", label: "Moodle site", placeholder: "https://exams.example.com" },
                    { k: "moodle_token", label: "Web service token", secret: true },
@@ -53,7 +59,7 @@ export default function Connectors({ readOnly }: { readOnly: boolean }) {
                    { k: "moodle_activity_id", label: "Fast Track activity id", config: true, placeholder: "e.g. 7", hint: "for grades" }]}>
           <MoodlePanel s={s} reload={load} />
         </Card>
-        <Card id="clickup" title="ClickUp" mode={s.clickup.mode} ro={ro} keys={keys} cfg={s.config} reload={load}
+        <Card id="clickup" title="ClickUp" mode={s.clickup.mode} check={s.checks.clickup} ro={ro} keys={keys} cfg={s.config} reload={load}
           blurb="A flagged learner gets a task, “Fast Track: chapter”, with their launch link inside. It closes itself when they clear the final quiz."
           fields={[{ k: "clickup_token", label: "Personal token", secret: true, placeholder: "pk_…" },
                    { k: "clickup_team_id", label: "Workspace id", placeholder: "Blank: first Workspace" },
@@ -71,14 +77,29 @@ function Badge({ mode }: { mode: Mode }) {
     <span className={cn("size-1.5 rounded-full", mode === "live" ? "bg-[#1a0d14]" : "bg-pink-300/60")} />{mode === "live" ? "Live" : "Demo mode"}</span>;
 }
 
-function Card({ id, title, blurb, mode, fields, ro, keys, cfg, reload, children }: {
-  id: string; title: string; blurb: string; mode: Mode; fields: Field[]; ro: boolean; keys: Record<string, string>;
-  cfg: Record<string, string>; reload: () => Promise<unknown>; children: React.ReactNode;
+/* One line that answers "is this connected?": the last Test connection result, or why there isn't one. */
+function Health({ mode, check, busy }: { mode: Mode; check: Check | null | undefined; busy: boolean }) {
+  const t = check?.at ? new Date(check.at.replace(" ", "T") + ":00Z") : null;
+  const when = t && !isNaN(+t) ? ` (checked ${t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})` : "";
+  const [dot, text] = busy ? ["bg-pink-300/60 animate-pulse", "Checking the connection…"]
+    : !check ? (mode === "live" ? ["bg-pink-300/40", "Credentials saved, not checked yet"] : ["bg-pink-300/40", "Not connected: demo mode with sample data"])
+    : !check.ok ? ["bg-red-400", `Couldn't connect${when}`]
+    : check.mode === "live" ? ["bg-emerald-400", `Connected${when}`]
+    : ["bg-pink-300/60", "Demo mode works (no real account yet)"];
+  return <p role="status" className="inline-flex items-center gap-2 text-sm font-semibold text-pink-50"><span className={cn("size-2.5 shrink-0 rounded-full", dot)} />{text}</p>;
+}
+
+function Card({ id, title, blurb, mode, check, fields, ro, keys, cfg, reload, extra, children }: {
+  id: string; title: string; blurb: string; mode: Mode; check?: Check | null; fields: Field[]; ro: boolean; keys: Record<string, string>;
+  cfg: Record<string, string>; reload: () => Promise<unknown>; extra?: React.ReactNode; children: React.ReactNode;
 }) {
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<"" | "save" | "test">("");
   const [msg, setMsg] = useState("");
-  const [test, setTest] = useState<TestRes>(null);
+  const [test, setTest] = useState<TestRes>(check ?? null);
+  useEffect(() => { setTest(check ?? null); }, [check?.at, check?.mode]);
+  // A live connector checks itself when Settings opens, so the status is never a guess.
+  useEffect(() => { if (mode === "live") run(); }, [mode]);
   const value = (f: Field) => edit[f.k] ?? (f.secret ? "" : (f.config ? cfg[f.k] : keys[f.k]) || "");
   const save = async () => {
     setBusy("save"); setMsg(""); setTest(null);
@@ -87,12 +108,12 @@ function Card({ id, title, blurb, mode, fields, ro, keys, cfg, reload, children 
       const con = Object.fromEntries(fields.filter((f) => f.config && f.k in edit).map((f) => [f.k, edit[f.k]]));
       if (Object.keys(sec).length) await api("/api/settings", { json: sec });
       if (Object.keys(con).length) await api("/api/connectors/config", { json: con });
-      setEdit({}); await reload(); setMsg("Saved");
+      setEdit({}); await reload(); setMsg("Saved"); run();
     } catch (e: any) { setMsg(String(e.message || e)); } finally { setBusy(""); }
   };
   const run = async () => {
     setBusy("test"); setTest(null);
-    try { setTest(await api<TestRes>(`/api/connectors/${id}/test`, { method: "POST" })); }
+    try { setTest(await api<TestRes>(`/api/connectors/${id}/test`, { method: "POST" })); reload(); }
     catch (e: any) { setTest({ ok: false, mode, message: String(e.message || e) }); } finally { setBusy(""); }
   };
   return (
@@ -102,6 +123,8 @@ function Card({ id, title, blurb, mode, fields, ro, keys, cfg, reload, children 
           <div><b className="text-h3">{title}</b><p className="mt-1 text-label text-pink-200/70">{blurb}</p></div>
           <Badge mode={mode} />
         </div>
+        <Health mode={mode} check={test} busy={busy === "test"} />
+        {extra}
         {fields.map((f) => (
           <label key={f.k} className="block">
             <span className="mb-1.5 flex items-baseline justify-between gap-3 text-label text-pink-200/80"><span className="font-semibold">{f.label}</span>
@@ -118,11 +141,39 @@ function Card({ id, title, blurb, mode, fields, ro, keys, cfg, reload, children 
         </div>
         {test && (
           <p role="status" className={cn("rounded-xl border px-4 py-3 text-sm", test.ok ? "border-pink-300/40 bg-pink-300/10 text-pink-50" : "border-dashed border-pink-300/40 text-pink-100")}>
-            <b>{test.ok ? (test.mode === "live" ? "Connected" : "Demo mode") : "Couldn't connect."}</b> {test.message}{test.ms ? ` (${test.ms} ms)` : ""}
+            {test.message}{test.ms ? ` (${test.ms} ms)` : ""}
           </p>
         )}
       </div>
       <div className="min-w-0 rounded-2xl border border-pink-300/15 bg-black/20 p-4 md:p-5">{children}</div>
+    </div>
+  );
+}
+
+function GoogleSignIn({ g, ro, reload }: { g: Google; ro: boolean; reload: () => Promise<unknown> }) {
+  const back = new URLSearchParams(location.search).get("google");
+  const redirect = `${location.origin}${g.redirect_path}`;
+  const [copied, setCopied] = useState(false);
+  const disconnect = async () => { await api("/api/connectors/google/disconnect", { method: "POST" }); reload(); };
+  const copy = async () => { try { await navigator.clipboard.writeText(redirect); setCopied(true); } catch { /* clipboard blocked */ } };
+  if (!g.allowed) return null;
+  const off = !g.client_saved || ro;
+  return (
+    <div className="grid gap-2 rounded-xl border border-pink-300/20 bg-black/20 p-3.5 text-sm">
+      {g.signed_in ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span>Signed in to Google{g.account ? <> as <b>{g.account}</b></> : null}{g.drive ? null : " (no Drive access, so no recording thumbnails)"}</span>
+          {!ro && <button className="text-pink-300 hover:underline" onClick={disconnect}>Disconnect</button>}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <a className={cn(primary, off && "pointer-events-none opacity-50")} href="/api/connectors/google/start" aria-disabled={off}>Sign in with Google</a>
+          <span className="text-label text-pink-200/70">{g.client_saved ? "Opens Google's consent screen. The connection then renews itself." : "Save the OAuth client id and secret first."}</span>
+        </div>
+      )}
+      {back && back !== "ok" && <p className="text-pink-100">Google said: {back}</p>}
+      <p className="text-label text-pink-200/60">Authorised redirect URI for the Google client: <code className="break-all text-pink-200/90">{redirect}</code>{" "}
+        <button className="text-pink-300 hover:underline" onClick={copy}>{copied ? "Copied" : "Copy"}</button></p>
     </div>
   );
 }

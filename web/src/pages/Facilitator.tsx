@@ -1,14 +1,14 @@
 /* Facilitator: exam clocks, the lesson runway, the route through the modules, the next lesson with
    the agent hand-off (21st.dev Animated Beam), the race, and learners to check. Real Melsoft data. */
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { api, fmtDate, melsoftCourse, splitTitle, type Board, type Learner, type Pacing } from "@/lib/api";
 import { AnimatedBeam } from "@/components/ui/animated-beam";
-import { ShimmerButton } from "@/components/ui/shimmer-button";
-import { Icon, Modal, NumberTicker, ProgressRing, SpotlightCard } from "@/components/ui/kit";
+import { Icon, NumberTicker, ProgressRing, SpotlightCard } from "@/components/ui/kit";
 import { cn } from "@/lib/utils";
+import { LoadError, Skeleton, SkeletonCard } from "@/components/ui/loading";
 import { TestsWaiting, TrackSummary, type Summary } from "@/pages/FacExtras";
+import PrincipalChat from "@/components/PrincipalChat";
 
 const MOD_HUE = ["#ffd1e6", "#fff0f7", "#ff9ccb", "#ff3d9a", "#e6197f", "#c00d68", "#8f0a52", "#5c0838"];
 const modHue = (m: string) => MOD_HUE[(parseInt(m.replace(/\D/g, ""), 10) || 1) % MOD_HUE.length];
@@ -52,23 +52,37 @@ export default function Facilitator() {
     } finally { setBusy(false); }
   };
 
-  if (err) return <div className="glass p-6">Couldn't open the class: {err}</div>;
-  if (!st || !board || !fac) return <div className="py-6 text-pink-200/70">Opening the class…</div>;
+  if (err) return <LoadError message={err} onRetry={() => { setErr(""); load().catch((e) => setErr(String(e.message || e))); }} />;
+  if (!st || !board || !fac) return (
+    <div className="grid gap-6" role="status" aria-label="Opening the class">
+      <Skeleton className="h-4 w-28" /><Skeleton className="h-14 w-3/5" />
+      <SkeletonCard lines={4} label="Loading what was covered" />
+      <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]"><SkeletonCard lines={2} label="Loading the next lesson" /><SkeletonCard lines={3} label="Loading the exam runway" /></div>
+    </div>
+  );
 
   const p = st.pacing, short = p.shortfall || 0, next = st.lessons.find((l) => l.id === fac.next?.lesson_id) || st.lessons.find((l) => l.status === "Planned");
   const termDays = Math.max(1, Math.round((+new Date(st.course.exam_date) - +new Date(st.course.term_start)) / 864e5));
   const mods = [...new Set(st.topics.map((t) => splitTitle(t.title).mod))];
-  const curChapter = (fac.stopped && !fac.stopped.finished ? fac.stopped.chapter : fac.next?.chapter) || fac.stopped?.chapter || st.topics[0]?.title || "";
-  const ct = splitTitle(curChapter);
-  const modTopics = st.topics.filter((t) => splitTitle(t.title).mod === ct.mod);
-  const taughtIds = new Set(st.lessons.filter((l) => l.status !== "Planned").map((l) => l.topic_id));
-  const partialFrac = fac.stopped && !fac.stopped.finished && fac.next?.sections.length
-    ? (fac.next.sections.indexOf(fac.stopped.section || "") + 1) / fac.next.sections.length : 0;
-  const doneCh = modTopics.filter((t) => taughtIds.has(t.id)).length;
+  // When is the next lesson really? Never on or before the day the last class stopped (or today):
+  // a lesson left over from a missed slot moves to the next teaching day on the timetable.
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const nextDate = (() => {
+    if (!next) return "";
+    const pd = next.planned_date || "";
+    const d = new Date([fac.today, fac.stopped?.date || ""].sort().pop()! + "T00:00:00");
+    if (fac.stopped?.date && fac.stopped.date >= fac.today) d.setDate(d.getDate() + 1);   // today's class already happened
+    const start = ymd(d);
+    if (pd >= start) return pd;
+    const days: number[] = Array.isArray(st.course.slot_days) ? st.course.slot_days : [0, 1, 2, 3, 4];
+    for (let i = 0; i < 14 && !days.includes((d.getDay() + 6) % 7); i++) d.setDate(d.getDate() + 1);
+    return ymd(d);
+  })();
+  // Name it by the chapter it teaches (lesson titles like "Firewalls (part 1 of 2)" carry no module code)
+  const nextCh = splitTitle(fac.next?.chapter || next?.title || "");
+  const nextLabel = nextCh.kt ? `${nextCh.mod} ${nextCh.kt}` : (fac.next?.chapter || next?.title || "").replace(/^Chapter \d+:\s*/, "");
   // The headline is the course or qualification itself (e.g. "Cyber security"), not the module code.
   const courseName = String(st.course.subject || st.course.title).replace(/\s*\([^)]*\)\s*$/, "") || st.course.title;
-  const cur = { mod: ct.mod, kt: ct.kt, name: ct.name, section: fac.stopped && !fac.stopped.finished ? fac.stopped.section : null,
-    doneCh, totalCh: modTopics.length, pct: modTopics.length ? (100 * (doneCh + partialFrac)) / modTopics.length : 0 };
 
   return (
     <>
@@ -77,65 +91,55 @@ export default function Facilitator() {
         <div className="min-w-0 flex-1">
           <div className="eyebrow">Now teaching</div>
           <h1 className="mt-2 text-display [text-wrap:balance]">{courseName}</h1>
-          <p className="mt-2 max-w-[640px] text-h2 [text-wrap:balance]"><span className="text-pink-300">{cur.mod}</span> · {cur.name}</p>
-          <p className="mt-2 text-body text-pink-200/80">
-            {cur.kt} {cur.section ? <>· in progress at <b className="text-pink-100">{cur.section}</b></> : "· starts next lesson"}
-          </p>
-          <div className="mt-3 max-w-[640px]">
-            <div className="mb-1.5 flex justify-between text-label text-pink-200/70"><span>{cur.mod} progress</span><span>{cur.doneCh} of {cur.totalCh} chapters taught</span></div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-              <motion.div className="h-full rounded-full bg-gradient-to-r from-pink-600 to-pink-300" initial={{ width: 0 }} animate={{ width: `${Math.max(2, cur.pct)}%` }} transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }} />
-            </div>
-          </div>
         </div>
         <div className="flex shrink-0 flex-col items-start gap-2 md:items-end">
           <span className="inline-flex h-9 items-center gap-2 rounded-full border border-pink-300/30 bg-pink-500/10 px-3.5 text-muted font-semibold">
             {Icon.clock}<span className="font-mono"><NumberTicker value={p.days_to_exam} /></span> days to {st.course.title} exam · {fmtDate(p.exam_date)}
           </span>
-          <span className="text-label text-pink-200/70">{fac.coverage.pct}% of exam content covered · forecast finish {fmtDate(p.eta)}</span>
-          {short ? <span className="hatch inline-flex items-center gap-1.5 rounded-full border border-dashed border-grey bg-zinc-800 px-2.5 py-1 text-xs">{Icon.clock}{short} lesson{short > 1 ? "s" : ""} after the exam</span>
-            : <span className="inline-flex items-center gap-1.5 rounded-full bg-pink-300 px-2.5 py-1 text-xs font-semibold text-[#1a0d14]">{Icon.check} every lesson fits</span>}
         </div>
       </motion.section>
 
-      {/* 2. Covered so far (route map as it was) beside the next lesson */}
-      <section className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-        <motion.div {...rise(1)} className="min-w-0">
+      {/* 2. The hero continues: covered so far first, then the next lesson beside the exam runway (dev note 47) */}
+        <motion.div {...rise(1)} className="mt-6 min-w-0">
           <Head title="Covered so far" compact lede={fac.stopped
             ? `Last lesson stopped at ${splitTitle(fac.stopped.chapter).mod} ${splitTitle(fac.stopped.chapter).kt}${fac.stopped.section ? ` · ${fac.stopped.section}` : ""}${fac.stopped.finished ? " (chapter finished)" : ""}${fac.stopped.date ? ` on ${fmtDate(fac.stopped.date)}` : ""}.`
             : "Nothing taught yet. Record where today's class stopped on the next lesson, and the pin moves here."} />
           <div className="glass p-2.5"><RouteMap st={st} board={board} stopped={fac.stopped} /></div>
+          <a href="#/class/progress"
+            className="mt-3 inline-flex items-center gap-2 rounded-full border border-pink-300/40 px-4 py-2 text-sm font-semibold text-pink-100 hover:border-pink-300/70 hover:bg-pink-500/10">
+            Show progress{Icon.arrow}</a>
         </motion.div>
+      <section className="mt-6 grid gap-5 lg:grid-cols-[1fr_1.1fr]">
         <motion.div {...rise(2)} className="min-w-0">
-          <Head title="Next lesson" compact lede={next ? `${fmtDate(next.planned_date)} · ${splitTitle(next.title).mod} ${splitTitle(next.title).kt}` : "Nothing planned"} />
+          <Head title="Next lesson" compact lede={next ? `${fmtDate(nextDate)} · ${nextLabel}` : "Nothing planned"} />
           <NextLesson lesson={plan} busy={busy} onPrepare={prepare} next={fac.next} onChanged={() => load()} />
         </motion.div>
+        <motion.div {...rise(3)} className="min-w-0">
+          <Head title="Exam runway" compact lede={`One tile per lesson; the flag is the exam. ${p.taught} taught · ${p.lessons_left} to go.`} />
+          <div className="glass p-5">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(13px,1fr))] gap-[5px]">
+              {st.lessons.map((l, i) => {
+                const risky = p.at_risk_ids.includes(l.id), done = l.status !== "Planned", isNext = next?.id === l.id;
+                const flag = short && i === p.slots_left + p.taught;
+                return (
+                  <span key={l.id} className="contents">
+                    {flag && <span className="grid place-items-center text-pink-300 [filter:drop-shadow(0_0_8px_rgba(255,156,203,.8))]" title={`Exam ${fmtDate(p.exam_date)}`}>
+                      <svg viewBox="0 0 18 26" className="h-[26px] w-[18px]" fill="currentColor"><rect x="1" width="2" height="26" rx="1" /><path d="M3 1h13l-3 5 3 5H3z" /></svg></span>}
+                    <motion.span initial={{ opacity: 0, scaleY: 0.4 }} whileInView={{ opacity: 1, scaleY: 1 }} viewport={{ once: true }}
+                      transition={{ delay: i * 0.009, duration: 0.5 }} title={`${l.seq}. ${l.title} · ${l.planned_date ? fmtDate(l.planned_date) : "after the exam"}`}
+                      className={cn("aspect-[1/1.6] rounded-[4px] border", risky ? "hatch border-dashed border-grey bg-zinc-800" : "", isNext && "outline outline-2 outline-offset-2 outline-pink-100")}
+                      style={risky ? undefined : { borderColor: modHue(splitTitle(l.topic || l.title).mod) + "77",
+                        background: done ? modHue(splitTitle(l.topic || l.title).mod) : modHue(splitTitle(l.topic || l.title).mod) + "40" }} />
+                  </span>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[12.5px] text-pink-200/80">
+              {mods.map((m) => <span key={m}><i className="mr-1.5 inline-block size-2.5 rounded-[3px] align-[-1px]" style={{ background: modHue(m) }} />{m}</span>)}
+            </div>
+          </div>
+        </motion.div>
       </section>
-
-      <Section i={3} title="Exam runway" lede="One tile per lesson, in teaching order. The flag is the exam; striped tiles land after it." chip={`${p.taught} taught · ${p.lessons_left} to go`}>
-        <div className="glass p-5">
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(13px,1fr))] gap-[5px]">
-            {st.lessons.map((l, i) => {
-              const risky = p.at_risk_ids.includes(l.id), done = l.status !== "Planned", isNext = next?.id === l.id;
-              const flag = short && i === p.slots_left + p.taught;
-              return (
-                <span key={l.id} className="contents">
-                  {flag && <span className="grid place-items-center text-pink-300 [filter:drop-shadow(0_0_8px_rgba(255,156,203,.8))]" title={`Exam ${fmtDate(p.exam_date)}`}>
-                    <svg viewBox="0 0 18 26" className="h-[26px] w-[18px]" fill="currentColor"><rect x="1" width="2" height="26" rx="1" /><path d="M3 1h13l-3 5 3 5H3z" /></svg></span>}
-                  <motion.span initial={{ opacity: 0, scaleY: 0.4 }} whileInView={{ opacity: 1, scaleY: 1 }} viewport={{ once: true }}
-                    transition={{ delay: i * 0.009, duration: 0.5 }} title={`${l.seq}. ${l.title} · ${l.planned_date ? fmtDate(l.planned_date) : "after the exam"}`}
-                    className={cn("aspect-[1/1.6] rounded-[4px] border", risky ? "hatch border-dashed border-grey bg-zinc-800" : "", isNext && "outline outline-2 outline-offset-2 outline-pink-100")}
-                    style={risky ? undefined : { borderColor: modHue(splitTitle(l.topic || l.title).mod) + "77",
-                      background: done ? modHue(splitTitle(l.topic || l.title).mod) : modHue(splitTitle(l.topic || l.title).mod) + "40" }} />
-                </span>
-              );
-            })}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[12.5px] text-pink-200/80">
-            {mods.map((m) => <span key={m}><i className="mr-1.5 inline-block size-2.5 rounded-[3px] align-[-1px]" style={{ background: modHue(m) }} />{m}</span>)}
-          </div>
-        </div>
-      </Section>
 
       <Section i={4} title="Student track plans" lede="Who is on pace for the exam. Open a learner for their own plan.">
         <TrackSummary data={fac} />
@@ -147,6 +151,8 @@ export default function Facilitator() {
       <Section i={5} title="Tests waiting for approval" lede="Personal tests drafted by the agents. Learners only see them after you approve.">
         <TestsWaiting tests={st.tests || []} reload={() => load()} />
       </Section>
+
+      <PrincipalChat courseId={cid} />
     </>
   );
 }
@@ -227,7 +233,7 @@ const AGENTS = [
   { name: "Examiner", color: "#ffd1e6", icon: <svg viewBox="0 0 24 24" className="size-[22px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg> },
 ];
 
-function Handoff() {
+export function Handoff() {
   const box = useRef<HTMLDivElement>(null);
   const a = useRef<HTMLDivElement>(null), b = useRef<HTMLDivElement>(null), c = useRef<HTMLDivElement>(null);
   const refs = [a, b, c];
@@ -246,7 +252,7 @@ function Handoff() {
 }
 
 /** Record where today's class stopped: a section of the chapter, or the whole chapter finished. */
-function RecordProgress({ next, onChanged }: { next: Summary["next"]; onChanged: () => void }) {
+export function RecordProgress({ next, onChanged }: { next: Summary["next"]; onChanged: () => void }) {
   const [sec, setSec] = useState(next?.continues_from || next?.sections[0] || "");
   const [saving, setSaving] = useState(false);
   if (!next) return null;
@@ -269,9 +275,9 @@ function RecordProgress({ next, onChanged }: { next: Summary["next"]; onChanged:
   );
 }
 
-/** The next lesson stays small: its name, where it's at, and a "View plan" button that opens the full plan. */
+/** The next lesson stays small: its name, where it's at, and a "View plan" button that opens lesson prep
+    (dev note 30): the road to the exam, the last Meet class, what it covered and the lesson as a cited deck. */
 function NextLesson(props: { lesson: any; busy: boolean; onPrepare: (id: number) => void; next: Summary["next"]; onChanged: () => void }) {
-  const [open, setOpen] = useState(false);
   const { lesson, next } = props;
   if (!lesson) return <div className="glass p-5 text-pink-200/70">Every lesson is taught.</div>;
   const passed = String(lesson.verdict || "").toLowerCase().startsWith("pass");
@@ -283,85 +289,11 @@ function NextLesson(props: { lesson: any; busy: boolean; onPrepare: (id: number)
           <b className="block truncate text-body">{splitTitle(lesson.title).name}</b>
           <span className="text-label text-pink-200/70">{next?.continues_from ? `Picks up from ${next.continues_from} · ` : ""}{state}</span>
         </div>
-        <button onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        <a href="#/class/prep"
           className="inline-flex shrink-0 items-center gap-2 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_-12px_rgba(230,25,127,.75)]">
-          {open ? "Hide plan" : "View plan"}<span className={cn("transition-transform", open && "rotate-90")}>{Icon.arrow}</span></button>
+          View plan{Icon.arrow}</a>
       </div>
-      {open && <PlanCard {...props} />}
     </div>
-  );
-}
-
-function PlanCard({ lesson, busy, onPrepare, next, onChanged }: { lesson: any; busy: boolean; onPrepare: (id: number) => void; next: Summary["next"]; onChanged: () => void }) {
-  const [pas, setPas] = useState<any>(null);
-  const [approving, setApproving] = useState(false);
-  if (!lesson) return <div className="glass p-5 text-pink-200/70">Every lesson is taught.</div>;
-  if (!lesson.plan) {
-    return (
-      <div className="glass flex flex-col gap-4 p-5">
-        {next?.continues_from && <p className="text-sm text-pink-200/80">Picks up from <b>{next.continues_from}</b>, where the last class stopped.</p>}
-        <Handoff />
-        <p className="text-pink-200/75">Not prepared yet. The Librarian finds the passages, the Subject Teacher drafts and the Examiner checks every line against the notes.</p>
-        <div><ShimmerButton disabled={busy} onClick={() => onPrepare(lesson.id)} className="gap-2 px-5 py-2.5 font-semibold" background="linear-gradient(135deg,#e6197f,#c00d68)" shimmerColor="#ffd1e6">{busy ? "The staff are working…" : "Prepare it now"}</ShimmerButton></div>
-      </div>
-    );
-  }
-  const items = new Map<string, any>(((lesson.review || {}).items || []).map((it: any) => [it.text, it]));
-  // Start from the stop point: keep lines whose cited passages sit at or after the section the class stopped in.
-  const order = next?.sections || [];
-  const from = next?.continues_from ? order.indexOf(next.continues_from) : -1;
-  const secOf = (n: number) => { const p = (lesson.passages || []).find((x: any) => x.n === n); return p ? String(p.section || "").replace(/^KT\d+\s*/, "") : ""; };
-  const fromHere = (t: string) => from < 0 || [...t.matchAll(/\[P(\d+)\]/g)].some((m) => order.indexOf(secOf(Number(m[1]))) >= from);
-  const lines: string[] = [...(lesson.plan.objectives || []), ...(lesson.plan.explanation || [])].filter(fromHere).slice(0, 8);
-  const approve = async () => { setApproving(true); try { await api(`/api/lessons/${lesson.id}/approve`, { method: "POST" }); onChanged(); } finally { setApproving(false); } };
-  const passed = String(lesson.verdict || "").toLowerCase().startsWith("pass");
-  const cite = (text: string) => text.split(/(\[P\d+\])/g).map((part, i) => {
-    const m = /^\[P(\d+)\]$/.exec(part);
-    if (!m) return <span key={i}>{part}</span>;
-    const n = Number(m[1]);
-    return <button key={i} onClick={() => setPas((lesson.passages || []).find((x: any) => x.n === n))}
-      className="mx-0.5 rounded-md border border-pink-400/50 bg-pink-600/25 px-1.5 font-mono text-[11.5px] font-bold text-pink-100 hover:bg-pink-600/45">P{n}</button>;
-  });
-  return (
-    <SpotlightCard className="flex flex-col gap-4 p-5">
-      {createPortal(<PrintablePlan lesson={lesson} lines={lines} next={next} />, document.body)}
-      <div className="no-print"><Handoff /></div>
-      {next?.continues_from && <p className="text-sm text-pink-200/80">Picks up from <b>{next.continues_from}</b>, where the last class stopped.</p>}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-h3">{splitTitle(lesson.title).name}</h3>
-        <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", passed ? "bg-pink-300 text-[#1a0d14]" : "bg-pink-500 text-white")}>
-          {passed ? "Examiner passed" : lesson.verdict || "Checking"}{lesson.examiner_rounds ? ` · ${lesson.examiner_rounds} send-backs` : ""}
-        </span>
-      </div>
-      <ul className="grid gap-2.5">
-        {lines.map((t) => {
-          const it = items.get(t), ok = !it || String(it.verdict || "").startsWith("Supported");
-          const txt = t.length > 170 ? t.slice(0, 167).replace(/\s+\S*$/, "") + "… " + ((t.match(/\[P\d+\]\s*$/) || [""])[0]) : t;
-          return (
-            <li key={t} className="grid grid-cols-[24px_1fr] items-start gap-2.5 text-[14.5px]">
-              <span title={it?.reason || "Checked"} className={cn("grid size-[22px] place-items-center rounded-[7px] border",
-                ok ? "border-pink-300/50 bg-pink-300/15 text-pink-200 shadow-[0_0_10px_-3px_#ff9ccb]" : "hatch border-dashed border-grey bg-zinc-800 text-pink-100")}>{ok ? Icon.check : Icon.clock}</span>
-              <span>{cite(txt)}</span>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="flex flex-wrap justify-between gap-2 text-[13px] text-pink-200/70">
-        <span>{(lesson.passages || []).length} passages from the notes · every line ticked against its source</span>
-        <a className="no-print text-pink-300 underline-offset-4 hover:underline" href="/staffroom#plan">Review in Staffroom</a>
-      </div>
-      <div className="no-print flex flex-wrap items-center gap-2.5">
-        <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-full border border-pink-300/30 px-4 py-2 text-sm font-semibold hover:border-pink-300/60">
-          <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2" /><rect x="6" y="14" width="12" height="7" /></svg>Print plan</button>
-        {next?.approved
-          ? <span className="inline-flex items-center gap-1.5 rounded-full bg-pink-300 px-3 py-1.5 text-sm font-semibold text-[#1a0d14]">{Icon.check} Approved{next.approved_at ? ` · ${fmtDate(next.approved_at)}` : ""}</span>
-          : <button disabled={approving} onClick={approve} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 px-4 py-2 text-sm font-semibold text-white">{Icon.check} Approve plan</button>}
-      </div>
-      <RecordProgress next={next} onChanged={onChanged} />
-      <Modal open={!!pas} title={pas ? `P${pas.n} · ${pas.where}` : ""} onClose={() => setPas(null)} primary={{ label: "Close", onClick: () => setPas(null) }}>
-        <p className="max-h-[50vh] overflow-auto text-left text-pink-100/90">{pas?.text}</p>
-      </Modal>
-    </SpotlightCard>
   );
 }
 
@@ -421,24 +353,6 @@ export function Checks({ learners }: { learners: Learner[] }) {
           <div className="text-[13px] text-pink-200/70">{c.ev}</div>
         </SpotlightCard>
       ))}
-    </div>
-  );
-}
-
-/** A plain copy of the plan that only exists on paper: black on white, one page, sources listed. */
-function PrintablePlan({ lesson, lines, next }: { lesson: any; lines: string[]; next: Summary["next"] }) {
-  const cited = new Set(lines.flatMap((t) => [...t.matchAll(/\[P(\d+)\]/g)].map((m) => Number(m[1]))));
-  return (
-    <div id="print-root">
-      <h1>Lesson plan: {splitTitle(lesson.title).name}</h1>
-      <p className="meta">{splitTitle(lesson.title).mod} {splitTitle(lesson.title).kt} · {fmtDate(lesson.planned_date)} · {lesson.minutes || 90} min
-        {next?.continues_from ? ` · picks up from ${next.continues_from}` : ""} · Examiner: {lesson.verdict || "checked"}{next?.approved ? " · Approved by the teacher" : " · Draft"}</p>
-      <h2>Objectives and explanation</h2>
-      <ol>{lines.map((t) => <li key={t}>{t}</li>)}</ol>
-      {lesson.plan.worked_example && <><h2>Worked example</h2><p>{lesson.plan.worked_example}</p></>}
-      {lesson.plan.activity && <><h2>Activity</h2><p>{lesson.plan.activity}</p></>}
-      <h2>Sources from the course notes</h2>
-      <ul className="src">{(lesson.passages || []).filter((p: any) => cited.has(p.n)).map((p: any) => <li key={p.n}>[P{p.n}] {p.where}</li>)}</ul>
     </div>
   );
 }

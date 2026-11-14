@@ -49,6 +49,7 @@
     .st.working{border-color:#ff7ab8;color:#fff;background:rgba(230,25,127,.25)}
     .st.done{border-color:rgba(255,170,210,.2);color:#ffb3d6;background:rgba(255,170,210,.08)}
     .st.question{border-color:#ffd166;color:#ffd166}
+    .sha{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:rgba(255,200,225,.6)}
     .reply{margin-top:6px;padding-left:8px;border-left:2px solid #e6197f;font-size:12.5px;color:rgba(255,220,235,.85)}
     .foot{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:1px solid rgba(255,170,210,.12);font-size:12px;color:rgba(255,200,225,.55)}
     .link{all:unset;cursor:pointer;color:#ff9ccb;font-size:12px}.link:hover{text-decoration:underline}
@@ -62,6 +63,20 @@
     textarea{width:100%;min-height:96px;resize:vertical;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,170,210,.25);background:#0c0b0e;color:#ffe3f0;font-size:14px;line-height:1.45}
     .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
     .err{color:#ffd166;font-size:12.5px}
+    .types{display:flex;gap:6px}.types label{flex:1;cursor:pointer;text-align:center;padding:7px 8px;border-radius:9px;border:1px solid rgba(255,170,210,.2);font-size:12.5px;font-weight:650;color:rgba(255,210,230,.8)}
+    .types input{position:absolute;opacity:0;pointer-events:none}.types label:has(input:checked){border-color:#ff7ab8;background:rgba(230,25,127,.18);color:#fff}
+    .types label:has(input:focus-visible){outline:2px solid #ff7ab8;outline-offset:2px}
+    .tag{padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700;border:1px solid rgba(255,170,210,.25);color:#ffd0e6}
+    .tag.feature{border-color:#c4b5fd;color:#ddd6fe}.tag.visitor{border-color:rgba(255,255,255,.25);color:rgba(255,255,255,.75)}
+    .item{cursor:pointer}.item:focus-visible{outline:2px solid #ff7ab8;outline-offset:2px}
+    .detail{grid-column:1/-1;display:grid;gap:8px;margin-top:4px;padding-top:8px;border-top:1px solid rgba(255,170,210,.12)}
+    .detail[hidden]{display:none}.ba{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    .ba figure{margin:0;font-size:11px;color:rgba(255,200,225,.6)}.ba img,.ba .ph{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:8px;border:1px solid rgba(255,170,210,.15);background:#0c0b0e}
+    .ba .ph{display:grid;place-items:center;text-align:center;padding:6px;font-size:10.5px;background:repeating-linear-gradient(45deg,#16121a 0 6px,#1b1520 6px 12px)}
+    .cite{font-size:12px}.cite b{font-family:ui-monospace,Consolas,monospace;color:#ffd0e6}.cite a{color:#ff9ccb;word-break:break-all}
+    .cite ul{margin:4px 0 0;padding-left:16px}
+    pre.diff{margin:4px 0 0;max-height:220px;overflow:auto;padding:8px;border-radius:8px;background:#0a090c;border:1px solid rgba(255,170,210,.12);font:11px/1.45 ui-monospace,Consolas,monospace;white-space:pre;color:#e9d5df}
+    pre.diff .add{color:#9be7b0}pre.diff .del{color:#ff9aa8}pre.diff .hunk{color:#c4b5fd}
     @media (prefers-reduced-motion:no-preference){.fab,.panel,.compose{transition:transform .15s}.fab:active{transform:scale(.97)}}
   </style>
   <button class="fab" part="fab" aria-label="Leave a note (Alt+N)" title="Leave a note (Alt+N)">
@@ -78,7 +93,10 @@
   <form class="compose" hidden>
     <img class="shot" alt="The marked area" hidden>
     <div class="where"></div>
-    <textarea placeholder="What should change here?" aria-label="Your note"></textarea>
+    <div class="types" role="radiogroup" aria-label="What kind of change">
+      <label><input type="radio" name="ntype" value="tweak" checked>Tweak</label>
+      <label><input type="radio" name="ntype" value="feature">New feature or page</label></div>
+    <textarea placeholder="What should change here?" aria-label="Your note" maxlength="4000"></textarea>
     <div class="row"><span class="err"></span><span style="display:flex;gap:8px">
       <button type="button" class="btn ghost cancel">Cancel</button><button type="submit" class="btn primary save">Save note</button></span></div>
   </form>`;
@@ -106,15 +124,39 @@
       if (sig === seen && list.childElementCount) return;
       seen = sig;
       list.innerHTML = notes.length ? notes.map((n) => `
-        <div class="item">
+        <div class="item" tabindex="0" role="button" aria-expanded="false" data-id="${n.id}">
           ${n.has_shot ? `<img src="/api/dev-notes/${n.id}/shot.png?v=${encodeURIComponent(n.updated_at)}" alt="">` : `<div class="noimg"></div>`}
-          <div><div class="meta"><b>#${n.id}</b><span class="st ${n.status}">${LABEL[n.status] || n.status}</span><span>${ago(n.updated_at)}</span></div>
+          <div><div class="meta"><b>#${n.id}</b><span class="st ${n.status}">${LABEL[n.status] || n.status}</span>${n.type === "feature" ? '<span class="tag feature">Feature</span>' : ""}${n.visitor ? '<span class="tag visitor">Visitor</span>' : ""}<span>${ago(n.updated_at)}</span></div>
             <p>${esc(n.note)}</p>
-            ${n.status === "question" && n.question ? `<div class="reply">${esc(n.question)}</div>` : ""}
-            ${n.summary ? `<div class="reply">${esc(n.summary)}</div>` : ""}</div>
+            ${(() => { const r = n.reply || (n.status === "question" && n.question) || n.summary || "";   // one-line reply from the developer
+              return r ? `<div class="reply">${esc(r)}${n.commit && !r.includes(n.commit) ? ` <span class="sha">(${esc(n.commit)})</span>` : ""}</div>` : ""; })()}</div>
+          <div class="detail" hidden>${detail(n)}</div>
         </div>`).join("") : `<div class="empty">No notes yet. Mark an area or pick an element, then say what should change.</div>`;
     } catch (e) { /* server restarting: try again next tick */ }
   }
+  /* The evidence behind a note: before/after, the page, the commits with their files and diff.
+     Everything is escaped: note text and diffs are plain text, never HTML. */
+  function detail(n) {
+    const before = n.has_shot ? `<img src="/api/dev-notes/${n.id}/shot.png" alt="Before">`
+      : `<div class="ph">${esc(n.before_note || "No screenshot")}</div>`;
+    const after = n.after ? `<img src="${esc(n.after)}" alt="After, on the demo">` : `<div class="ph">${n.status === "done" ? "Refresh the page to see it" : "Not done yet"}</div>`;
+    const diff = (d) => esc(d).split("\n").map((l) => l.startsWith("+") && !l.startsWith("+++") ? `<span class="add">${l}</span>`
+      : l.startsWith("-") && !l.startsWith("---") ? `<span class="del">${l}</span>` : l.startsWith("@@") ? `<span class="hunk">${l}</span>` : l).join("\n");
+    const cites = (n.citations || []).map((c) => `<div class="cite"><b>${esc(c.commit)}</b> ${esc(c.subject)}
+        ${c.files && c.files.length ? `<ul>${c.files.map((f) => `<li><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.path)}</a></li>`).join("")}</ul>` : ""}
+        ${c.diff ? `<pre class="diff">${diff(c.diff)}</pre>` : ""}</div>`).join("");
+    return `<div class="ba"><figure>${before}<figcaption>Before</figcaption></figure><figure>${after}<figcaption>After</figcaption></figure></div>
+      <div class="where">Page: ${esc(n.page || n.url || "")}</div>${cites || (n.commit ? `<div class="cite">Fixed in <b>${esc(n.commit)}</b></div>` : "")}`;
+  }
+  list.addEventListener("click", (e) => {
+    const item = e.target instanceof Element && !e.target.closest("a") && e.target.closest(".item");
+    if (!item) return;
+    const d = item.querySelector(".detail"), open = d.hidden;
+    d.hidden = !open; item.setAttribute("aria-expanded", String(open));
+  });
+  list.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && e.target instanceof Element && e.target.classList.contains("item")) { e.preventDefault(); e.target.click(); }
+  });
   const poll = () => { clearInterval(timer); timer = setInterval(() => { if (!document.hidden) refresh(); }, 5000); };
 
   function showFab(on) { fab.hidden = !on; if (!on) { panel.hidden = true; compose.hidden = true; } }
@@ -231,7 +273,7 @@
     if (!draft || !ta.value.trim()) { err.textContent = "Write a note first."; ta.focus(); return; }
     const btn = $(".save"); btn.disabled = true; btn.textContent = "Saving…";
     try {
-      const r = await fetch("/api/dev-notes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...draft, note: ta.value }) });
+      const r = await fetch("/api/dev-notes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...draft, note: ta.value, type: (root.querySelector('input[name="ntype"]:checked') || {}).value || "tweak" }) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
       draft = null; seen = ""; openPanel();
     } catch (e2) { err.textContent = "Could not save: " + (e2.message || e2); }

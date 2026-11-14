@@ -15,7 +15,8 @@ TODAY = date(2026, 11, 13)
 @pytest.fixture(autouse=True)
 def fresh_db(tmp_path, monkeypatch):
     for key in ("NEBIUS_API_KEY", "CLICKUP_TOKEN", "GOOGLE_ACCESS_TOKEN", "MOODLE_URL", "MOODLE_TOKEN",
-                "AS_OF_DATE", "FASTTRACK_PUBLIC"):
+                "AS_OF_DATE", "FASTTRACK_PUBLIC", "FASTTRACK_PUBLIC_CONNECTORS", "GOOGLE_CLIENT_ID",
+                "GOOGLE_CLIENT_SECRET"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("STAFFROOM_DB", str(tmp_path / "test.db"))
     db.reset_for_tests()
@@ -89,3 +90,56 @@ def test_public_demo_keeps_connector_config_read_only(monkeypatch):
     _course()
     monkeypatch.setenv("FASTTRACK_PUBLIC", "1")
     assert client().post("/api/connectors/config", json={"meet_code": "abc"}).status_code == 403
+
+
+def test_public_site_keeps_connectors_in_demo_even_with_keys(monkeypatch):
+    _course()
+    db.set_setting("clickup_token", "pk_owner_token_123456")
+    db.set_setting("google_refresh_token", "1//owner-refresh")
+    monkeypatch.setenv("FASTTRACK_PUBLIC", "1")
+    s = client().get("/api/connectors").json()
+    assert {s["meet"]["mode"], s["moodle"]["mode"], s["clickup"]["mode"]} == {"demo"}
+    assert s["google"]["signed_in"] is False and s["google"]["account"] == ""
+    assert client().get("/api/connectors/google/start", follow_redirects=False).status_code == 403
+    monkeypatch.setenv("FASTTRACK_PUBLIC_CONNECTORS", "1")
+    assert connectors.live("clickup")
+
+
+def test_test_connection_is_remembered_and_goes_stale_when_mode_changes():
+    _course()
+    c = client()
+    assert c.get("/api/connectors").json()["checks"]["clickup"] is None
+    c.post("/api/connectors/clickup/test")
+    chk = c.get("/api/connectors").json()["checks"]["clickup"]
+    assert chk["ok"] and chk["mode"] == "demo" and chk["at"]
+    db.set_setting("clickup_token", "pk_now_live_123456")
+    assert c.get("/api/connectors").json()["checks"]["clickup"] is None
+
+
+def test_google_sign_in_redirects_and_refreshes_token(monkeypatch):
+    from app import google_auth
+    _course()
+    c = client()
+    assert c.get("/api/connectors/google/start", follow_redirects=False).status_code == 400
+    db.set_setting("google_client_id", "id.apps.googleusercontent.com")
+    db.set_setting("google_client_secret", "GOCSPX-secret")
+    r = c.get("/api/connectors/google/start", follow_redirects=False)
+    q = parse_qs(urlparse(r.headers["location"]).query)
+    assert r.status_code == 303 and q["access_type"] == ["offline"]
+    assert q["redirect_uri"][0].endswith("/api/connectors/google/callback")
+    assert "https://www.googleapis.com/auth/meetings.space.readonly" in q["scope"][0]
+    assert c.get("/api/connectors/google/callback?code=x&state=wrong", follow_redirects=False).status_code == 400
+
+    calls = []
+
+    class Resp:
+        status_code = 200
+        def json(self):
+            return {"access_token": "ya29.fresh", "expires_in": 3600}
+
+    monkeypatch.setattr(google_auth.httpx, "post", lambda url, **kw: calls.append(kw["data"]) or Resp())
+    db.set_setting("google_refresh_token", "1//refresh")
+    assert connectors.live("meet")
+    assert google_auth.access_token() == "ya29.fresh"
+    assert google_auth.access_token() == "ya29.fresh" and len(calls) == 1      # cached until near expiry
+    assert calls[0]["grant_type"] == "refresh_token"

@@ -6,7 +6,7 @@ import * as THREE from "three";
 
 const INK = 0xff9ccb, FILL = 0x0c0b0e, LIT = [0xffd1e6, 0xff9ccb, 0xff3d9a, 0xe6197f];
 
-export default function TowerGL({ floors, done, spin, className }: { floors: number; done: boolean; spin: boolean; className?: string }) {
+export default function TowerGL({ floors, built = floors, done, spin, className }: { floors: number; built?: number; done: boolean; spin: boolean; className?: string }) {
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,7 +38,8 @@ export default function TowerGL({ floors, done, spin, className }: { floors: num
       const y = 0.16 + i * H + H / 2;
       add(new THREE.BoxGeometry(W, H, D), 0, y, 0);
       add(new THREE.BoxGeometry(W + 0.1, 0.05, D + 0.1), 0, y + H / 2, 0);
-      const colour = LIT[Math.min(LIT.length - 1, Math.floor((i / Math.max(1, n - 1)) * (LIT.length - 1)))];
+      // built storeys glow; the ones still to climb are outlines with dark windows
+      const colour = i < built ? LIT[Math.min(LIT.length - 1, Math.floor((i / Math.max(1, n - 1)) * (LIT.length - 1)))] : 0x2a1720;
       const mat = new THREE.MeshBasicMaterial({ color: colour, side: THREE.DoubleSide });
       for (let f = 0; f < 4; f++) {
         for (let k = -1; k <= 1; k++) {
@@ -96,7 +97,7 @@ export default function TowerGL({ floors, done, spin, className }: { floors: num
       scene.traverse((o: any) => { o.geometry?.dispose?.(); (Array.isArray(o.material) ? o.material : [o.material]).forEach((m: any) => m?.dispose?.()); });
       renderer.dispose(); el.removeChild(renderer.domElement);
     };
-  }, [floors, done, spin]);
+  }, [floors, built, done, spin]);
 
   return <div ref={host} className={className} />;
 }

@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Staffroom Fast Track, pink and black. Same tokens as the plain app (app/static/ft/ft.css). */
+/* Classroom Fast Track (CFT), pink and black. Same tokens as the plain app (app/static/ft/ft.css). */
 @theme {
   --font-sans: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
@@ -127,6 +127,35 @@ body { margin: 0; font-family: var(--font-sans); -webkit-font-smoothing: antiali
   #print-root li { margin: 0 0 4pt; }
   #print-root .src { font-size: 9.5pt; color: #333; }
   @page { margin: 16mm; }
+
+  /* The lesson bundle from lesson prep (dev note 30): landscape pages, one per slide, sources underneath. */
+  @page bundle { size: A4 landscape; margin: 11mm 13mm; }
+  #print-root.bundle { font: 10.5pt/1.4 "Inter", Arial, sans-serif; }
+  #print-root.bundle .page { page: bundle; break-after: page; }
+  #print-root.bundle .page:last-child { break-after: auto; }
+  #print-root.bundle h1 { font-size: 22pt; line-height: 1.1; margin: 0 0 6pt; }
+  #print-root.bundle h2 { font-size: 12pt; margin: 10pt 0 4pt; }
+  #print-root.bundle h3 { font-size: 10pt; margin: 8pt 0 3pt; text-transform: uppercase; letter-spacing: .06em; color: #555; }
+  #print-root.bundle .kicker { font-size: 9pt; letter-spacing: .14em; text-transform: uppercase; color: #c00d68; font-weight: 700; margin: 0 0 6pt; }
+  #print-root.bundle .cover .cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14pt; margin-top: 8pt; }
+  #print-root.bundle .small { font-size: 8.5pt; color: #555; margin-top: 12pt; }
+  #print-root.bundle .pslide { border: 1.2pt solid #1a0d14; border-top: 5pt solid #e6197f; border-radius: 6pt; padding: 12pt 18pt 14pt;
+    min-height: 105mm; break-inside: avoid; }
+  #print-root.bundle .ptop { display: flex; justify-content: space-between; font-size: 8pt; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: #c00d68; }
+  #print-root.bundle .ptitle { font-size: 21pt; line-height: 1.1; margin: 6pt 0 2pt; }
+  #print-root.bundle .psub { font-size: 9.5pt; color: #555; margin: 0 0 4pt; }
+  #print-root.bundle .pbody { margin-top: 8pt; font-size: 12.5pt; line-height: 1.4; }
+  #print-root.bundle .pbody.img { display: grid; grid-template-columns: 1.45fr 1fr; gap: 14pt; }
+  #print-root.bundle .pbody li { margin: 0 0 6pt; }
+  #print-root.bundle .pbody img { max-width: 100%; max-height: 80mm; object-fit: contain; display: block; }
+  #print-root.bundle figure { margin: 0; }
+  #print-root.bundle figcaption { font-size: 7.5pt; color: #555; margin-top: 3pt; }
+  #print-root.bundle .psources { columns: 2; font-size: 9pt; }
+  #print-root.bundle sup.cite { font-size: 7pt; font-weight: 700; color: #c00d68; vertical-align: super; margin-left: 1pt; }
+  #print-root.bundle .under { margin-top: 8pt; font-size: 8.5pt; color: #222; }
+  #print-root.bundle .under ol { padding-left: 14pt; }
+  #print-root.bundle .q { margin: 0 0 4pt; break-inside: avoid; }
 }
 
 /* Student landing: the tower spins on its vertical axis; the crown orbits its top. */

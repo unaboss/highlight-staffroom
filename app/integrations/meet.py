@@ -10,6 +10,7 @@ from datetime import datetime
 import httpx
 
 API = "https://meet.googleapis.com/v2"
+DRIVE = "https://www.googleapis.com/drive/v3"
 
 
 class MeetError(RuntimeError):
@@ -80,3 +81,22 @@ class Meet:
         if not entries:
             raise MeetError("The call has no transcript. Turn on transcription in Meet for the class.")
         return entries, attendance, rec
+
+    def recording_thumbnail(self, record_name: str) -> bytes | None:
+        """The class recording's thumbnail, from the Drive file Meet saved it to. Needs the token to
+        also carry a Drive read scope (drive.meet.readonly or drive.readonly). None if there isn't one."""
+        for rec in self._get_all(f"/{record_name}/recordings", "recordings"):
+            fid = (rec.get("driveDestination") or {}).get("file")
+            if not fid:
+                continue
+            r = self.http.get(f"{DRIVE}/files/{fid}", params={"fields": "thumbnailLink"})
+            if r.status_code >= 400:
+                raise MeetError(f"Drive file -> {r.status_code}")
+            link = r.json().get("thumbnailLink") or ""
+            host = httpx.URL(link).host if link else ""
+            if not (host.endswith(".googleusercontent.com") or host.endswith(".google.com")):
+                continue                         # never send the token anywhere but Google
+            img = self.http.get(link)
+            if img.status_code < 400 and img.headers.get("content-type", "").startswith("image/"):
+                return img.content
+        return None

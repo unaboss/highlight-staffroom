@@ -89,13 +89,13 @@ export default function School3D({ flash, className, onReady }: { flash: boolean
     const ring = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.CircleGeometry(0.19, 28)), lineMat());
     ring.position.set(0, py(200), pedFront); school.add(ring); lines.push(ring);
     line([[0, py(200), pedFront], [0, py(188), pedFront], [0, py(200), pedFront], [0.09, py(205), pedFront]]);
-    // sign: STAFFROOM on a small canvas texture
+    // sign: CLASSROOM on a small canvas texture
     const cv = document.createElement("canvas"); cv.width = 512; cv.height = 96;
     const g = cv.getContext("2d")!;
     g.fillStyle = "#0c0b0e"; g.fillRect(0, 0, 512, 96);
     g.strokeStyle = "#ff9ccb"; g.lineWidth = 6; g.strokeRect(6, 6, 500, 84);
     g.fillStyle = "#ff9ccb"; g.font = "600 44px Inter, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
-    (g as any).letterSpacing = "14px"; g.fillText("STAFFROOM", 262, 50);
+    (g as any).letterSpacing = "14px"; g.fillText("CLASSROOM", 262, 50);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.56, 0.3), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true }));
     sign.position.set(0, py(277), cf + 0.004); school.add(sign);
     // door arch and steps

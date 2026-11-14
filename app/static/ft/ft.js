@@ -90,7 +90,7 @@ function chrome(view) {
 }
 function pop(id) { const el = $(id); if (el) { el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); } }
 
-const ROLE_HOME = { owner: "#/school", facilitator: "#/class", student: "#/play" };
+const ROLE_HOME = { owner: "#/class", facilitator: "#/class", student: "#/play" };   // owner view retired
 async function boot() {
   // Demo sign-in: /fast-track/login sends ?role=...; without a role, go and pick one.
   const qs = new URLSearchParams(location.search);

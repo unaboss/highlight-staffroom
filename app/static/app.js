@@ -901,7 +901,7 @@ async function pageSettings() {
   <div class="card section-gap" id="new"><div class="card-head"><h2>New course</h2><span class="muted">the Principal plans the term from this</span></div>
     <form class="form" data-form="course">
       <div class="row"><div class="field" style="flex:2;min-width:220px"><label>Course title</label><input name="title" required placeholder="Ethical Hacking 101"></div>
-        <div class="field" style="flex:1;min-width:160px"><label>Teacher</label><input name="teacher" placeholder="Mr Masiavhula"></div>
+        <div class="field" style="flex:1;min-width:160px"><label>Teacher</label><input name="teacher" placeholder="Ms Dube"></div>
         <div class="field" style="flex:1;min-width:160px"><label>Subject</label><input name="subject" placeholder="Cyber security"></div></div>
       <div class="row"><div class="field"><label>Term starts</label><input type="date" name="term_start" required></div>
         <div class="field"><label>Exam date</label><input type="date" name="exam_date" required></div>

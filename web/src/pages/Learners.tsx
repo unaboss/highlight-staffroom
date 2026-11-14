@@ -6,6 +6,7 @@ import { Checks, Lanes } from "@/pages/Facilitator";
 import { Icon, StatusPill } from "@/components/ui/kit";
 import { Participation, TrackPlans, type Summary } from "@/pages/FacExtras";
 import { cn } from "@/lib/utils";
+import { LoadError, SkeletonCard } from "@/components/ui/loading";
 
 type Chapter = { topic_id: number; title: string; top: number; quiz: boolean; taught: boolean; state: string };
 
@@ -25,8 +26,8 @@ export default function Learners({ id }: { id?: number }) {
     setMe(id ? await api(`/api/ft/${c}/student/${id}`) : null);
   };
   useEffect(() => { setMe(null); load().catch((e) => setErr(String(e.message || e))); }, [id]);
-  if (err) return <div className="glass p-6">Couldn't open the learners: {err}</div>;
-  if (!fac || !cid) return <div className="py-6 text-pink-200/70">Opening the learners…</div>;
+  if (err) return <LoadError message={err} onRetry={() => { setErr(""); load().catch((e) => setErr(String(e.message || e))); }} />;
+  if (!fac || !cid) return <div className="grid gap-4"><SkeletonCard lines={2} label="Opening the learners" /><div className="grid gap-3 lg:grid-cols-2"><SkeletonCard lines={4} /><SkeletonCard lines={4} /></div></div>;
 
   const t = id ? fac.tracks.find((x) => x.learner_id === id) : null;
   const back = id ? "#/learners" : "#/class";
