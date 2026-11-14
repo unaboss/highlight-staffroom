@@ -10,7 +10,7 @@ import Learners from "@/pages/Learners";
 import Settings from "@/pages/Settings";
 import Student from "@/pages/Student";
 import { School } from "@/lib/school";
-import { api, store } from "@/lib/api";
+import { api, melsoftCourse, store } from "@/lib/api";
 
 // Two roles: staff (facilitator) and learners. The school owner view was retired (dev note 20).
 type AppRole = "facilitator" | "student";
@@ -47,10 +47,22 @@ export default function App() {
   const agents = page === "class" && sub[0] === "agents";           // #/class/agents[/jobId]: watch or replay a live agent run
   const role = asRole(store("ftn.role"));
   const [status, setStatus] = useState("");
+  const [pace, setPace] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => {
     api<{ course: string | null; llm: { online: boolean } }>("/api/health")
       .then((h) => setStatus(`${h.course || "Classroom Fast Track"} · ${h.llm.online ? "model online" : "offline mode"}`)).catch(() => {});
+    // on track for the exam? the class's share of the notes covered vs. the share it should have by today (dev note 63)
+    melsoftCourse().then((c) => c && api<{ facts: { class_pct: number; should_be_pct: number } }>(`/api/ft/${c.id}/progress`))
+      .then((p) => { if (!p) return; const gap = Math.round((p.facts.class_pct - p.facts.should_be_pct) * 10) / 10;
+        setPace({ ok: gap >= 0, text: gap >= 0 ? `On track for the exam · ${Math.round(p.facts.class_pct)}% covered` : `Behind pace · ${Math.abs(gap)} pts to catch up` }); })
+      .catch(() => {});
   }, []);
+
+  // the teacher's dashboard sits on a white page (dev note 60)
+  useEffect(() => {
+    const on = page === "class" && !sub[0] && !/\/settings\/?$/.test(location.pathname);
+    document.documentElement.classList.toggle("light-page", on);
+  }, [page, sub[0]]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const atLogin = /\/login\/?$/.test(location.pathname) || page === "login";
   const atSettings = /\/settings\/?$/.test(location.pathname);
@@ -78,7 +90,7 @@ export default function App() {
         <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
           <div className="hidden items-center gap-2 text-sm text-pink-200/75 lg:flex">
             <span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-pink-300 opacity-70" /><span className="relative inline-flex size-2 rounded-full bg-pink-300" /></span>
-            {status}
+            {pace ? <a href="/fast-track/#/class/progress" title={status} className={"rounded-full border px-2.5 py-0.5 font-semibold " + (pace.ok ? "border-pink-300/40 text-pink-100" : "border-red-400/60 text-red-200")}>{pace.text}</a> : status}
           </div>
           <div id="hdr-slot" />
           {role !== "student" && (

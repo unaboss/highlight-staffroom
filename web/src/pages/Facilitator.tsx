@@ -106,18 +106,19 @@ export default function Facilitator() {
             ? `Last lesson stopped at ${splitTitle(fac.stopped.chapter).mod} ${splitTitle(fac.stopped.chapter).kt}${fac.stopped.section ? ` · ${fac.stopped.section}` : ""}${fac.stopped.finished ? " (chapter finished)" : ""}${fac.stopped.date ? ` on ${fmtDate(fac.stopped.date)}` : ""}.`
             : "Nothing taught yet. Record where today's class stopped on the next lesson, and the pin moves here."} />
           <div className="glass p-2.5 [&_svg]:mx-auto [&_svg]:max-h-[24svh] lg:[&_svg]:max-h-[calc(100svh-430px)] [&_svg]:w-auto [&_svg]:max-w-full"><RouteMap st={st} board={board} stopped={fac.stopped} /></div>
-          <a href="#/class/progress"
-            className="mt-3 inline-flex items-center gap-2 rounded-full border border-pink-300/40 px-4 py-2 text-sm font-semibold text-pink-100 hover:border-pink-300/70 hover:bg-pink-500/10">
-            Show progress{Icon.arrow}</a>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a href="#/class/progress"
+              className="inline-flex items-center gap-2 rounded-full border border-pink-300/40 px-4 py-2 text-sm font-semibold text-pink-100 hover:border-pink-300/70 hover:bg-pink-500/10">
+              Show progress{Icon.arrow}</a>
+            <a href="#/learners"
+              className="inline-flex items-center gap-2 rounded-full border border-pink-300/40 px-4 py-2 text-sm font-semibold text-pink-100 hover:border-pink-300/70 hover:bg-pink-500/10">
+              View student track{Icon.arrow}</a>
+          </div>
         </motion.div>
         <div className="flex min-w-0 flex-col gap-3">
         <motion.div {...rise(2)} className="min-w-0">
           <Head title="Next lesson" compact lede={next ? `${fmtDate(nextDate)} · ${nextLabel}` : "Nothing planned"} />
           <NextLesson lesson={plan} busy={busy} onPrepare={prepare} next={fac.next} onChanged={() => load()} />
-        </motion.div>
-        <motion.div {...rise(2)} className="min-w-0">
-          <Head title="Student track plans" compact lede="Who is on pace for the exam." />
-          <TrackSummary data={fac} />
         </motion.div>
         <motion.div {...rise(3)} className="min-w-0">
           <Head title="Exam runway" compact lede={`One tile per lesson; the flag is the exam. ${p.taught} taught · ${p.lessons_left} to go.`} />

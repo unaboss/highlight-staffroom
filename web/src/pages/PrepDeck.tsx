@@ -25,7 +25,8 @@ export default function PrepDeck({ lesson, res, prep, onReload }: { lesson: Prep
   const [modal, setModal] = useState<"" | "image" | "notes">("");
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState(false);
-  const [drafted, setDrafted] = useState(false);   // the live run finished: show "Review lesson plan"     // watch the plan being written, caught and fixed
+  const [drafted, setDrafted] = useState(false);
+  const [picBusy, setPicBusy] = useState("");      // Add pictures progress   // the live run finished: show "Review lesson plan"     // watch the plan being written, caught and fixed
   const [approving, setApproving] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -105,6 +106,25 @@ export default function PrepDeck({ lesson, res, prep, onReload }: { lesson: Prep
     if (now) go(); else timer.current = window.setTimeout(go, 450);
   };
   const patch = (fn: (x: Slide) => Slide, now = false) => persist(slides.map((x, k) => (k === idx ? fn(x) : x)), now);
+  // one click: find an openly licensed picture (Wikimedia Commons, credited) for each content slide
+  const autoPictures = async () => {
+    const want = slides.map((x, k) => [x, k] as const).filter(([x]) => !x.image && !x.cut && !["title", "sources", "check"].includes(x.kind));
+    let next = [...slides], added = 0;
+    for (const [x, k] of want) {
+      setPicBusy(`Finding pictures… ${added}/${want.length}`);
+      const q = (x.title || x.bullets?.[0]?.text || "").replace(/\[P\d+\]/g, "").split(/\s+/).slice(0, 6).join(" ");
+      if (!q.trim()) continue;
+      try {
+        const { results } = await api<{ results: Hit[] }>(`/api/prep/images?q=${encodeURIComponent(q)}`);
+        if (!results?.length) continue;
+        const img = await api<Img>("/api/prep/images", { json: { title: results[0].title } });
+        next = next.map((y, j) => (j === k ? { ...y, image: img } : y)); added++;
+      } catch { /* no picture for this one */ }
+    }
+    persist(next, true);
+    setPicBusy(added ? `Added ${added} pictures` : "No pictures found (needs an internet connection)");
+    setTimeout(() => setPicBusy(""), 4000);
+  };
   const move = (d: number) => {
     const j = idx + d;
     if (j < 1 || j >= slides.length || slides[j].kind === "sources" || s.kind === "title" || s.kind === "sources") return;
@@ -134,8 +154,25 @@ export default function PrepDeck({ lesson, res, prep, onReload }: { lesson: Prep
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       {res.outdated && <div className="rounded-xl border border-pink-300/25 bg-pink-500/10 px-4 py-2.5 text-sm">The plan was prepared again since you last edited this deck, so the deck was rebuilt from the new plan.</div>}
 
+      {/* the last class stopped early: the plan must pick up what it missed (dev note 64) */}
+      {(() => {
+        const cov = prep.coverage;
+        if (!cov) return null;
+        const upto = cov.sections.findIndex((x) => x.name === cov.furthest);
+        const missed = cov.sections.filter((x, i) => i <= upto && x.state !== "covered").length;
+        if (!missed && cov.pct >= 100) return null;
+        return (
+          <button onClick={() => setLive(true)} className="no-print flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/60 bg-amber-400/10 px-4 py-3 text-left hover:bg-amber-400/15">
+            <span><b className="block text-amber-100">Update required: previous lesson plan not complete</b>
+              <span className="text-sm text-amber-100/80">The last class stopped at {tidy(cov.furthest || "")}{missed ? ` and missed ${missed} part${missed > 1 ? "s" : ""}` : ""}. Re-draft the plan to catch up first, then the new content.</span></span>
+            <span className="rounded-full bg-amber-300 px-4 py-2 text-sm font-bold text-[#1a1206]">Update the plan</span>
+          </button>
+        );
+      })()}
       {/* toolbar */}
       <div className="no-print flex flex-wrap items-center gap-2">
+        <button onClick={autoPictures} disabled={!!picBusy} title="Find an openly licensed picture for each slide"
+          className="rounded-full border border-pink-300/40 px-4 py-2 text-sm font-semibold text-pink-100 hover:border-pink-300/70 disabled:opacity-70">{picBusy || "Add pictures"}</button>
         <button onClick={() => setLive(true)} title="Watch the agents write, check and fix this plan"
           className="rounded-full bg-gradient-to-br from-pink-500 to-pink-600 px-4 py-2 text-sm font-semibold text-white">Re-draft live</button>
         <div className="flex items-center gap-1 rounded-full border border-pink-300/20 bg-white/[.03] p-1">

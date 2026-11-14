@@ -106,22 +106,11 @@ function Who({ data, cid, onPick }: { data: Data; cid: number; onPick: (id: numb
 
 function Picker({ data, learner }: { data: Data; learner: number }) {
   const [mod, setMod] = useState("All"); const [q, setQ] = useState("");
-  const st = data.stats || {}, me = data.learners.find((l) => l.id === learner);
   const mods = ["All", ...new Set(data.chapters.map((c) => splitTitle(c.title).mod))];
   const taught = taughtModules(mods.slice(1));
-  const acc = st.answered ? Math.round((100 * st.correct) / st.answered) : null;
-  const cal = st.sure_right + st.sure_wrong ? Math.round((100 * st.sure_right) / (st.sure_right + st.sure_wrong)) : null;
-  const resume = [...data.chapters].filter((c) => topOf(c) > 0 && !c.levels?.[QUIZ]?.passed).sort((a, b) => topOf(b) - topOf(a))[0];
   const rows = data.chapters.filter((c) => (mod === "All" || splitTitle(c.title).mod === mod) && (!q || c.title.toLowerCase().includes(q.toLowerCase())));
   return (
     <>
-      <h2 className="text-h2">{resume ? "Keep climbing" : "Pick a chapter"}, {(me?.name || "").split(" ")[0]}.</h2>
-      <p className="mt-2 max-w-[640px] text-body text-pink-200/75">Every chapter is a tower of ten floors: recall it, explain it, catch the mistake, apply it, analyse it. Then the final quiz puts the roof on.</p>
-      <div className="glass mb-6 mt-7 grid grid-cols-2 gap-px overflow-hidden sm:grid-cols-4">
-        {[[st.xp || 0, "XP earned"], [st.best_streak || 0, "best streak"], [acc, "answers right", "%"], [cal, "right when certain", "%"]].map(([v, l, s], i) => (
-          <div key={i} className="bg-[#0c0b0e]/55 px-[18px] py-4"><b className="stat block">{v === null ? "–" : <><NumberTicker value={v as number} />{s}</>}</b><span className="mt-2 block text-label text-pink-200/70">{l}</span></div>
-        ))}
-      </div>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <div className="flex max-w-full gap-1.5 overflow-x-auto p-0.5">
           {mods.map((m) => <button key={m} type="button" aria-pressed={m === mod} onClick={() => setMod(m)} className={cn("whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[13px] font-semibold", m === mod ? "border-pink-200 bg-pink-200 text-[#1a0d14]" : "border-pink-300/15 text-pink-200/80")}>{m}</button>)}

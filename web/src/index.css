@@ -167,3 +167,23 @@ body { margin: 0; font-family: var(--font-sans); -webkit-font-smoothing: antiali
   75% { transform: translateX(0) scale(.7); opacity: .45; }
   100% { transform: translateX(-90px) scale(.85); opacity: .7; }
 }
+
+/* White "paper" cards on the teacher page (dev note 58): dark text, pink accents kept. */
+.glass.paper { background: #ffffff !important; border-color: #f1d2e2 !important; color: #1f1320; box-shadow: 0 18px 40px -26px rgba(0,0,0,.7); backdrop-filter: none; }
+.paper :is([class*="text-pink-50"], [class*="text-pink-100"], [class*="text-pink-200"], b, strong) { color: #2a1622; }
+.paper [class*="text-pink-200/"] { color: #7a5266 !important; }
+.paper :is(.bg-gradient-to-br, .bg-gradient-to-r) { color: #fff; }
+.paper svg text { fill: #3b2030 !important; }
+.paper svg [stroke="#ff9ccb"], .paper svg [stroke="rgba(255,156,203,.28)"] { stroke: #e6197f; }
+
+/* Teacher page on white (dev note 60): the page is white, the cards stay dark. */
+html.light-page body { background: #ffffff; }
+html.light-page .grid-bg { display: none; }
+html.light-page main :is(h1, h2, h3, p, span, b, a, label, li, div):not(.glass, .glass *):not([class*="bg-gradient"], [class*="bg-gradient"] *) { color: #1f1320; }
+html.light-page main :is(p, span, div)[class*="text-pink-200"]:not(.glass *) { color: #6b4a5c; }
+html.light-page main a[class*="border-pink-300"]:not(.glass *) { border-color: #e6197f66; }
+html.light-page main .glass { background: #16111a !important; border-color: rgba(255,170,210,.18); box-shadow: 0 22px 50px -26px rgba(0,0,0,.55); }
+html.light-page main button[aria-haspopup="listbox"] { color: #1f1320; border-color: #e6197f66; }
+html.light-page #root > div[aria-hidden="true"][class*="-z-10"] { display: none; }
+html.light-page, html.light-page #root { background: #ffffff; min-height: 100%; }
+html.light-page main .glass :is(b, strong, h3) { color: #fff0f7; }

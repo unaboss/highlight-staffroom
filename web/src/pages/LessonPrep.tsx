@@ -10,7 +10,7 @@ import { RecordProgress } from "@/pages/Facilitator";
 import PrepDeck from "@/pages/PrepDeck";
 import { CoverageMap, Head, LastClassCard, Section, rise } from "@/components/prep-parts";
 import { LoadError, PageLoader, SkeletonCard } from "@/components/ui/loading";
-import { tidy, type DeckRes, type Notes, type Prep } from "@/lib/prep";
+import { tidy, type Coverage, type DeckRes, type Notes, type Prep } from "@/lib/prep";
 
 export default function LessonPrep({ lessonId }: { lessonId?: number }) {
   const [cid, setCid] = useState<number | null>(null);
@@ -56,15 +56,11 @@ export default function LessonPrep({ lessonId }: { lessonId?: number }) {
           </p>}
           {lesson && !lesson.is_next && <a href="#/class/prep" className="mt-2 inline-block text-sm text-pink-300 hover:underline">Go to the next lesson instead</a>}
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2 md:flex-col md:items-end">
-          <span className="inline-flex h-9 items-center gap-2 rounded-full border border-pink-300/30 bg-pink-500/10 px-3.5 text-muted font-semibold">
-            {Icon.clock}<span className="font-mono"><NumberTicker value={tl.days_to_exam} /></span> days to the exam · {fmtDate(tl.exam_date)}</span>
-          <span className="text-label text-pink-200/75">{tl.lessons_left} lessons left across {tl.chapters_left} chapters</span>
-        </div>
       </motion.section>
 
       {/* 2. The next lesson as a deck, right under the title (dev notes 48, 56) */}
       <section className="mt-5">
+        {cov && lesson && <MissedLastClass cov={cov} deck={deck?.deck || null} />}
         {lesson ? <PrepDeck lesson={lesson} res={deck} prep={prep} onReload={() => load()} /> : <div className="glass p-5 text-pink-200/75">Every lesson is taught.</div>}
       </section>
 
@@ -76,10 +72,13 @@ export default function LessonPrep({ lessonId }: { lessonId?: number }) {
           <Head title="Last class" lede={last ? `${fmtDate(last.held_on)} · ${splitTitle(last.chapter).mod} ${splitTitle(last.chapter).kt}` : "No class recorded yet"} />
           <LastClassCard last={last} />
         </motion.div>
-        <motion.div {...rise(3)} className="min-w-0">
+        <motion.div {...rise(3)} className="flex min-w-0 flex-col">
           <Head title="What the class covered" lede={cov ? `The transcript matched against the notes: ${cov.lines_matched} of ${cov.lines_total} lines taught something from them.` : "Pull a class from Google Meet to see this."} />
-          <CoverageMap cov={cov} pace={pace} recordedStop={recordedStop} lessonIsNext={!!lesson?.is_next}
-            nextLessonId={prep.summary.next?.lesson_id ?? null} onChanged={() => load()} />
+          {/* cropped to the Last class card's height on wide screens; scroll inside for the rest (dev note 62) */}
+          <div className="max-h-[62svh] overflow-y-auto overscroll-contain rounded-2xl">
+            <CoverageMap cov={cov} pace={pace} recordedStop={recordedStop} lessonIsNext={!!lesson?.is_next}
+              nextLessonId={prep.summary.next?.lesson_id ?? null} onChanged={() => load()} />
+          </div>
         </motion.div>
       </section>
 
@@ -170,6 +169,29 @@ function NotesReader({ cid, topicId }: { cid: number; topicId: number | null }) 
             {at < notes.sections.length - 1 ? "Next section" : "Next chapter"}{Icon.arrow}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** What the last class meant to cover but didn't, ticked off as the next plan picks it up. */
+function MissedLastClass({ cov, deck }: { cov: Coverage; deck: { sources: { section: string }[] } | null }) {
+  const upto = cov.sections.findIndex((x) => x.name === cov.furthest);
+  const missed = cov.sections.filter((x, i) => i <= upto && x.state !== "covered");
+  if (!missed.length) return null;
+  const norm = (t: string) => tidy(t).toLowerCase().replace(/^kt\d+\s*/, "");
+  const inPlan = (name: string) => !!deck?.sources.some((src) => norm(src.section).includes(norm(name)) || norm(name).includes(norm(src.section)));
+  const done = missed.filter((m) => inPlan(m.name)).length;
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-pink-300/20 bg-pink-500/[.06] px-3.5 py-2.5">
+      <b className="mr-1 text-sm">Missed last class</b>
+      {missed.map((m) => {
+        const ok = inPlan(m.name);
+        return <span key={m.name} title={ok ? "Covered in this plan" : "Not in this plan yet"}
+          className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold",
+            ok ? "border-pink-300/60 bg-pink-300/15 text-pink-50" : "border-dashed border-pink-300/40 text-pink-200/80")}>
+          {ok ? Icon.check : <span aria-hidden="true">○</span>}{tidy(m.name)}</span>;
+      })}
+      <span className="ml-auto text-xs text-pink-200/70">{done}/{missed.length} in this plan · catch-up first, then new</span>
     </div>
   );
 }

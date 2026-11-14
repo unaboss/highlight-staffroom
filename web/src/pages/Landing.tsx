@@ -81,25 +81,33 @@ function Hero({ v, preview }: { v: View; preview: boolean }) {
       <div className="flex min-w-0 flex-col items-stretch text-left">
         {preview && <span className="mb-3 self-start rounded-full border border-pink-300/30 px-3 py-1 text-label text-pink-200">Preview: finished state (simulated)</span>}
         <div className="eyebrow">{[...taught].join(", ")} · done in class</div>
-        <ul className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-1.5" aria-label="Chapter levels">
-          {focus.map((c) => {
-            const on = pick.kind === "leaf" && pick.id === c.topic_id, next = nextUp?.topic_id === c.topic_id;
-            return (
-              <li key={c.topic_id}>
-                <button type="button" onClick={() => setPick({ kind: "leaf", id: c.topic_id })} aria-pressed={on}
-                  aria-label={`${short(c)} ${c.name}: ${finished(c) ? "finished" : `floor ${c.top} of 10`}${next ? ", do this next" : ""}`}
-                  className={cn("flex w-full min-w-0 items-center gap-3 rounded-full border px-3 py-1.5 text-left transition-colors",
-                    on ? "border-pink-200 bg-pink-300/15 shadow-[0_0_22px_-8px_#ff3d9a]" : "border-pink-300/15 bg-white/[.03] hover:border-pink-300/40")}>
-                  <Meter top={c.top} quiz={c.quiz} />
-                  <span className="min-w-0 flex-1 truncate text-[13.5px]">
-                    <b className="font-mono text-[12px] text-pink-400">{c.kt}</b>{" "}
-                    <span className={cn(next ? "font-semibold text-pink-100 motion-safe:animate-pulse" : "text-pink-100/85")}>{c.name}</span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        {/* one vertical bar: each pill is a chapter, filled from the bottom as its floors are cleared (dev note 69) */}
+        <div className="relative mt-3">
+          <span aria-hidden="true" className="absolute bottom-0 left-0 top-0 w-[22px] rounded-full border border-pink-300/15 bg-white/[.04]" />
+          <ul className="relative grid gap-1 py-1" aria-label="Chapter levels">
+            {focus.map((c) => {
+              const on = pick.kind === "leaf" && pick.id === c.topic_id, next = nextUp?.topic_id === c.topic_id;
+              const lvl = finished(c) ? 10 : Math.min(10, c.top), col = METER[Math.max(0, lvl - 1)];
+              return (
+                <li key={c.topic_id}>
+                  <button type="button" onClick={() => setPick({ kind: "leaf", id: c.topic_id })} aria-pressed={on}
+                    aria-label={`${short(c)} ${c.name}: ${finished(c) ? "finished" : `floor ${c.top} of 10`}${next ? ", do this next" : ""}`}
+                    className="group flex h-9 w-full min-w-0 items-center gap-3 text-left">
+                    <span aria-hidden="true" className={cn("relative ml-[4px] h-full w-[14px] shrink-0 overflow-hidden rounded-full bg-pink-300/10 transition-shadow",
+                      on ? "ring-2 ring-pink-200 shadow-[0_0_14px_-2px_#ff3d9a]" : "group-hover:ring-1 group-hover:ring-pink-300/50")}>
+                      <i className="absolute inset-x-0 bottom-0 rounded-full" style={{ height: `${lvl * 10}%`, background: col, boxShadow: lvl ? `0 0 8px -1px ${col}` : undefined }} />
+                    </span>
+                    <span className={cn("min-w-0 flex-1 truncate rounded-full px-2 py-1 text-[13.5px]", on && "bg-pink-300/15")}>
+                      <b className="font-mono text-[12px] text-pink-400">{c.kt}</b>{" "}
+                      <span className={cn(next ? "font-semibold text-pink-100 motion-safe:animate-pulse" : "text-pink-100/85")}>{c.name}</span>
+                      <span className="ml-1.5 font-mono text-[11px] text-pink-200/50">{finished(c) ? "done" : `${c.top}/10`}</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
         <ShimmerButton onClick={begin} disabled={!target} className="mt-6 gap-2 px-6 py-3.5 text-body font-semibold"
           background="linear-gradient(135deg,#e6197f,#c00d68)" shimmerColor="#ffd1e6">
           <span className="flex min-w-0 flex-wrap justify-center gap-x-1.5 whitespace-normal text-center leading-tight">
@@ -120,17 +128,6 @@ function Hero({ v, preview }: { v: View; preview: boolean }) {
 }
 
 /** A horizontal ten-block level meter, lit up to the chapter's top floor. */
-function Meter({ top, quiz }: { top: number; quiz: boolean }) {
-  return (
-    <span className="flex shrink-0 gap-[2px]" aria-hidden="true">
-      {METER.map((col, k) => {
-        const lit = k < top || (quiz && k === 9);
-        return <i key={k} className="h-3.5 w-[5px] rounded-[1.5px]" style={lit ? { background: col, boxShadow: `0 0 6px -1px ${col}` } : { background: "rgba(255,170,210,.1)" }} />;
-      })}
-    </span>
-  );
-}
-
 /* ---------------------------------------------------------------- the course tree */
 
 type Leaf = { x: number; y: number; c: C };
