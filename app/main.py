@@ -696,7 +696,11 @@ def agents_run(request: Request, lesson_id: int | None = Body(None, embed=True),
                   or db.one("SELECT id, course_id FROM lessons WHERE course_id = ? ORDER BY seq DESC LIMIT 1", (cid,)))
         if not lesson:
             raise HTTPException(400, "Plan the term first: there are no lessons yet")
-    llm, notice = ai_gate.for_action(request.client.host if request.client else None)
+    if demo:                       # presenting: the scripted run, offline and paced, never waits on the network
+        from .llm import LLM
+        llm, notice = LLM(), None
+    else:
+        llm, notice = ai_gate.for_action(request.client.host if request.client else None)
     scripted = demo or not llm.online or os.environ.get("FASTTRACK_DATA", "").lower() == "demo"
     try:
         pace = float(os.environ.get("FASTTRACK_DEMO_PACE", "0.45")) if not llm.online else 0.0

@@ -1,0 +1,46 @@
+[
+  {
+    "id": "teacher",
+    "title": "The teacher's morning",
+    "role": "facilitator",
+    "steps": [
+      { "route": "#/class", "find": "h2:Covered so far", "say": "Where the class is: every chapter taught, and where the last lesson stopped.", "ms": 8000 },
+      { "route": "#/class", "find": "h2:Next lesson", "say": "The next lesson, built from the teacher's own notes.", "ms": 6000 },
+      { "route": "#/class", "find": "h2:Exam runway", "say": "One tile per lesson up to the exam. Striped tiles land after it.", "ms": 6000 },
+      { "route": "#/class/progress", "find": "main", "say": "Show progress: the pace needed, the class's pace and the average learner's.", "ms": 8000 },
+      { "route": "#/class/agents/demo", "find": "main", "say": "The agents write the next plan live: Principal, Librarian, Teacher, Examiner.", "ms": 14000 },
+      { "route": "#/class/agents/demo", "find": "*:Caught", "say": "The Examiner caught a line the notes don't back. The Teacher fixed it.", "ms": 10000 }
+    ]
+  },
+  {
+    "id": "learner",
+    "title": "A learner's Fast Track",
+    "role": "student",
+    "steps": [
+      { "route": "#/play", "find": "main", "say": "Each learner sees the course as a tree. Filled leaves are done.", "ms": 8000 },
+      { "route": "#/play", "find": "button:Begin Fast Track", "say": "Pick a branch, a leaf or the trunk, then begin.", "ms": 7000 },
+      { "route": "#/play/chapter/1", "find": "main", "say": "Ten floors a chapter, from recall to analysis. Every question cites the notes.", "ms": 8000 },
+      { "route": "#/play/chapter/1", "find": "button:Climb", "click": true, "say": "Five questions a floor. Say how sure you are, then answer.", "ms": 10000 }
+    ]
+  },
+  {
+    "id": "notes",
+    "title": "The notes agent",
+    "role": "facilitator",
+    "steps": [
+      { "route": "#/class", "action": "notes:open", "say": "Anyone can leave a note on any page: mark an area, say what to change.", "ms": 8000 },
+      { "route": "#/class", "action": "notes:detail", "say": "Each note is picked up in seconds, fixed, and marked Done.", "ms": 9000 },
+      { "route": "#/class", "action": "notes:detail", "say": "Every fix is cited: before and after, the files changed and the diff.", "ms": 9000 },
+      { "route": "#/class", "action": "notes:close", "say": "Built by the team's own notes agent, live, while they used the app.", "ms": 5000 }
+    ]
+  },
+  {
+    "id": "principal",
+    "title": "Ask the Principal",
+    "role": "facilitator",
+    "steps": [
+      { "route": "#/class", "find": "button[aria-label*=Principal]", "click": true, "say": "The Principal answers questions about the class from its records.", "ms": 6000 },
+      { "route": "#/class", "action": "principal:ask", "text": "Who is behind, and what should I do this week?", "find": "[role=dialog][aria-label='Ask the Principal']", "say": "Ask anything. It names the learners, tests and lessons it used.", "ms": 16000 }
+    ]
+  }
+]

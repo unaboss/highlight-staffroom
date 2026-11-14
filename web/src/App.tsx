@@ -5,6 +5,7 @@ import LessonPrep from "@/pages/LessonPrep";
 import Progress from "@/pages/Progress";
 import ReviewClasses from "@/pages/ReviewClasses";
 import AgentRun from "@/components/AgentRun";
+import Presenter from "@/components/Presenter";
 import Learners from "@/pages/Learners";
 import Settings from "@/pages/Settings";
 import Student from "@/pages/Student";
@@ -94,8 +95,9 @@ export default function App() {
         </div>
       </header>
       <main className={"mx-auto w-full pb-24 pt-8 md:pt-12 " + (page === "class" && !sub[0] ? "max-w-none px-4 md:px-6" : "max-w-[1184px] px-5 md:px-8")}>
-        {atSettings ? <Settings /> : agents ? <AgentRun key={sub[1] || "new"} jobId={Number(sub[1]) || undefined} lessonId={Number(new URLSearchParams(location.search).get("lesson")) || undefined} /> : prep ? <LessonPrep lessonId={Number(sub[1]) || undefined} /> : progress ? <Progress /> : classes ? <ReviewClasses sessionId={Number(sub[1]) || undefined} /> : page === "class" ? <Facilitator /> : page === "learners" ? <Learners id={Number(hash.split("/")[2]) || undefined} /> : <Student sub={hash.replace(/^#\/?/, "").split("/").slice(1)} />}
+        {atSettings ? <Settings /> : agents ? <AgentRun key={sub[1] || "new"} jobId={Number(sub[1]) || undefined} demo={sub[1] === "demo"} autoStart={sub[1] === "demo"} lessonId={Number(new URLSearchParams(location.search).get("lesson")) || undefined} /> : prep ? <LessonPrep lessonId={Number(sub[1]) || undefined} /> : progress ? <Progress /> : classes ? <ReviewClasses sessionId={Number(sub[1]) || undefined} /> : page === "class" ? <Facilitator /> : page === "learners" ? <Learners id={Number(hash.split("/")[2]) || undefined} /> : <Student sub={hash.replace(/^#\/?/, "").split("/").slice(1)} />}
       </main>
+      <Presenter />
     </>
   );
 }

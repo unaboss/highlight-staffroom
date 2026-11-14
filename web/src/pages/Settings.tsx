@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Icon } from "@/components/ui/kit";
 import { cn } from "@/lib/utils";
+import { presenterHidden, setPresenterHidden } from "@/components/Presenter";
 import { LoadError, SkeletonCard, Spinner } from "@/components/ui/loading";
 import Connectors from "@/pages/Connectors";
 
@@ -27,6 +28,7 @@ export default function Settings() {
       <h1 className="mt-4 text-display">Settings</h1>
       <p className="mt-2 max-w-[62ch] text-body text-pink-200/80">The AI model the staff agents think with, and the tools they read from. Keys stay on this server; the page only ever shows their last four characters.</p>
       {ro && <p role="note" className="mt-6 rounded-xl border border-dashed border-pink-300/40 px-4 py-3 text-body text-pink-100">This is the public demo, so settings are read-only. Run Classroom Fast Track yourself to add your own API key and connections.</p>}
+      <Presenting />
       <fieldset disabled={ro} className="contents"><ModelSection /></fieldset><Connectors readOnly={ro} />
     </>
   );
@@ -142,6 +144,33 @@ function ModelSection() {
           {test.ok ? <><b>OK</b> · {test.model} answered in {test.ms} ms</> : <><b>Couldn't connect.</b> {test.error}</>}
         </div>
       )}
+    </section>
+  );
+}
+
+/** Presenting: what shows on screen while demoing. Saved in this browser. */
+const NOTES_KEY = "staffroom-dev-notes-hidden";
+function Presenting() {
+  const read = () => { try { return localStorage.getItem(NOTES_KEY) === "1"; } catch { return false; } };
+  const [notesOff, setNotesOff] = useState(read);
+  const [iOff, setIOff] = useState(presenterHidden);
+  const setNotes = (off: boolean) => {
+    try { off ? localStorage.setItem(NOTES_KEY, "1") : localStorage.removeItem(NOTES_KEY); } catch { /* storage off */ }
+    const host = document.getElementById("dev-notes-host");
+    if (host) host.style.display = off ? "none" : "";
+    setNotesOff(off);
+  };
+  const Row = ({ label, on, set }: { label: string; on: boolean; set: (v: boolean) => void }) => (
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-pink-300/15 px-4 py-3">
+      <span className="text-body">{label}</span>
+      <input type="checkbox" role="switch" checked={on} onChange={(e) => set(e.target.checked)} className="size-5 accent-pink-500" />
+    </label>
+  );
+  return (
+    <section className="glass mt-8 grid gap-3 p-5 md:p-7">
+      <h2 className="text-h2">Presenting</h2>
+      <Row label="Show the Notes button" on={!notesOff} set={(v) => setNotes(!v)} />
+      <Row label="Show the tours button (i)" on={!iOff} set={(v) => { setPresenterHidden(!v); setIOff(!v); }} />
     </section>
   );
 }
