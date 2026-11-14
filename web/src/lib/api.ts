@@ -26,7 +26,8 @@ export type Board = { topics: { id: number; seq: number; title: string }[]; lear
 
 export async function melsoftCourse(): Promise<Course | null> {
   const cs = await api<Course[]>("/api/ft/courses");
-  return cs.find((c) => /melsoft/i.test(c.title)) || cs[0] || null;
+  const picked = Number(store("ftn.course"));                      // the cohort the teacher switched to
+  return cs.find((c) => c.id === picked) || cs.find((c) => /melsoft/i.test(c.title)) || cs[0] || null;
 }
 
 export function store(k: string, v?: string | null): string | null {

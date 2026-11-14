@@ -18,3 +18,4 @@ screenshots/
 data/*
 !data/demo/
 .claude/
+!data/real/

@@ -45,13 +45,8 @@ export default function LessonPrep({ lessonId }: { lessonId?: number }) {
         <a href="#/class/progress" className="inline-flex items-center gap-2 text-sm font-semibold text-pink-300 hover:underline">Show progress{Icon.arrow}</a>
       </div>
 
-      {/* 1. The next lesson as a deck, at the very top: the cleanest view (dev note 48) */}
-      <section className="mt-3">
-        {lesson ? <PrepDeck lesson={lesson} res={deck} prep={prep} onReload={() => load()} /> : <div className="glass p-5 text-pink-200/75">Every lesson is taught.</div>}
-      </section>
-
       {/* 1. Hero: the lesson being prepared */}
-      <motion.section {...rise(0)} className="mt-10 flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-8">
+      <motion.section {...rise(0)} className="mt-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-8">
         <div className="min-w-0 flex-1">
           <div className="eyebrow">Lesson plan{lesson && !lesson.is_next ? " · a later lesson" : ""}</div>
           <h1 className="mt-2 text-[clamp(32px,4.4vw,56px)] font-bold leading-[1.05] tracking-[-0.03em] [text-wrap:balance]">{lessonName}</h1>
@@ -68,11 +63,12 @@ export default function LessonPrep({ lessonId }: { lessonId?: number }) {
         </div>
       </motion.section>
 
+      {/* 2. The next lesson as a deck, right under the title (dev notes 48, 56) */}
+      <section className="mt-5">
+        {lesson ? <PrepDeck lesson={lesson} res={deck} prep={prep} onReload={() => load()} /> : <div className="glass p-5 text-pink-200/75">Every lesson is taught.</div>}
+      </section>
 
-      {/* 2. The notes for the chapter, paged section by section */}
-      <Section i={2} title="Course notes" lede="The notes for this lesson's chapter, one section at a time. Go back to earlier sections and chapters to see what came before.">
-        <NotesReader cid={cid} topicId={lesson?.topic_id ?? null} />
-      </Section>
+
 
       {/* 3. The last class, and what its transcript covered */}
       <section className="mt-12 grid grid-cols-[minmax(0,1fr)] gap-5 md:mt-16 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">

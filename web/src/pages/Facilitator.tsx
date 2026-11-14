@@ -2,7 +2,7 @@
    the agent hand-off (21st.dev Animated Beam), the race, and learners to check. Real Melsoft data. */
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { api, fmtDate, melsoftCourse, splitTitle, type Board, type Learner, type Pacing } from "@/lib/api";
+import { api, fmtDate, melsoftCourse, splitTitle, store, type Board, type Learner, type Pacing } from "@/lib/api";
 import { AnimatedBeam } from "@/components/ui/animated-beam";
 import { Icon, NumberTicker, ProgressRing, SpotlightCard } from "@/components/ui/kit";
 import { cn } from "@/lib/utils";
@@ -87,10 +87,10 @@ export default function Facilitator() {
   return (
     <>
       {/* 1. Hero: the module being taught right now; the exam countdown is a small pill beside it */}
-      <motion.section {...rise(0)} className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-8">
+      <motion.section {...rise(0)} className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-8">
         <div className="min-w-0 flex-1">
-          <div className="eyebrow">Now teaching</div>
-          <h1 className="mt-2 text-display [text-wrap:balance]">{courseName}</h1>
+          <CohortSwitch current={cid!} />
+          <h1 className="mt-1 text-h2 [text-wrap:balance]">{courseName}</h1>
         </div>
         <div className="flex shrink-0 flex-col items-start gap-2 md:items-end">
           <span className="inline-flex h-9 items-center gap-2 rounded-full border border-pink-300/30 bg-pink-500/10 px-3.5 text-muted font-semibold">
@@ -99,27 +99,30 @@ export default function Facilitator() {
         </div>
       </motion.section>
 
-      {/* 2. Hero: covered so far on the left, the next lesson on the right, the exam runway below */}
+      {/* 2. Hero, on one screen at any size: covered so far on the left; next lesson and the exam runway on the right (dev note 49) */}
       <section className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <motion.div {...rise(1)} className="min-w-0">
           <Head title="Covered so far" compact lede={fac.stopped
             ? `Last lesson stopped at ${splitTitle(fac.stopped.chapter).mod} ${splitTitle(fac.stopped.chapter).kt}${fac.stopped.section ? ` · ${fac.stopped.section}` : ""}${fac.stopped.finished ? " (chapter finished)" : ""}${fac.stopped.date ? ` on ${fmtDate(fac.stopped.date)}` : ""}.`
             : "Nothing taught yet. Record where today's class stopped on the next lesson, and the pin moves here."} />
-          <div className="glass p-2.5 [&_svg]:mx-auto [&_svg]:max-h-[46svh] [&_svg]:w-auto [&_svg]:max-w-full"><RouteMap st={st} board={board} stopped={fac.stopped} /></div>
+          <div className="glass p-2.5 [&_svg]:mx-auto [&_svg]:max-h-[24svh] lg:[&_svg]:max-h-[calc(100svh-430px)] [&_svg]:w-auto [&_svg]:max-w-full"><RouteMap st={st} board={board} stopped={fac.stopped} /></div>
           <a href="#/class/progress"
             className="mt-3 inline-flex items-center gap-2 rounded-full border border-pink-300/40 px-4 py-2 text-sm font-semibold text-pink-100 hover:border-pink-300/70 hover:bg-pink-500/10">
             Show progress{Icon.arrow}</a>
         </motion.div>
+        <div className="flex min-w-0 flex-col gap-3">
         <motion.div {...rise(2)} className="min-w-0">
           <Head title="Next lesson" compact lede={next ? `${fmtDate(nextDate)} · ${nextLabel}` : "Nothing planned"} />
           <NextLesson lesson={plan} busy={busy} onPrepare={prepare} next={fac.next} onChanged={() => load()} />
         </motion.div>
-      </section>
-      <section className="mt-6 grid grid-cols-[minmax(0,1fr)]">
+        <motion.div {...rise(2)} className="min-w-0">
+          <Head title="Student track plans" compact lede="Who is on pace for the exam." />
+          <TrackSummary data={fac} />
+        </motion.div>
         <motion.div {...rise(3)} className="min-w-0">
           <Head title="Exam runway" compact lede={`One tile per lesson; the flag is the exam. ${p.taught} taught · ${p.lessons_left} to go.`} />
-          <div className="glass p-5">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(13px,1fr))] gap-[5px]">
+          <div className="glass px-4 py-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(11px,1fr))] gap-[5px]">
               {st.lessons.map((l, i) => {
                 const risky = p.at_risk_ids.includes(l.id), done = l.status !== "Planned", isNext = next?.id === l.id;
                 const flag = short && i === p.slots_left + p.taught;
@@ -136,23 +139,18 @@ export default function Facilitator() {
                 );
               })}
             </div>
-            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[12.5px] text-pink-200/80">
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[12.5px] text-pink-200/80">
               {mods.map((m) => <span key={m}><i className="mr-1.5 inline-block size-2.5 rounded-[3px] align-[-1px]" style={{ background: modHue(m) }} />{m}</span>)}
             </div>
           </div>
         </motion.div>
+        </div>
       </section>
 
-      <Section i={4} title="Student track plans" lede="Who is on pace for the exam. Open a learner for their own plan.">
-        <TrackSummary data={fac} />
-      </Section>
 
       <a href="#/learners" className="mt-4 inline-flex items-center gap-2 text-sm text-pink-300 hover:underline">The race, learners to check and class participation are on the Student plans page{Icon.arrow}</a>
 
 
-      <Section i={5} title="Tests waiting for approval" lede="Personal tests drafted by the agents. Learners only see them after you approve.">
-        <TestsWaiting tests={st.tests || []} reload={() => load()} />
-      </Section>
 
       <PrincipalChat courseId={cid} />
     </>
@@ -355,6 +353,31 @@ export function Checks({ learners }: { learners: Learner[] }) {
           <div className="text-[13px] text-pink-200/70">{c.ev}</div>
         </SpotlightCard>
       ))}
+    </div>
+  );
+}
+
+/** The cohort the teacher is looking at (dev note 51). Each course on the server is a cohort. */
+function CohortSwitch({ current }: { current: number }) {
+  const [cs, setCs] = useState<{ id: number; title: string }[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => { api<{ id: number; title: string }[]>("/api/ft/courses").then(setCs).catch(() => setCs([])); }, []);
+  const idx = Math.max(0, cs.findIndex((c) => c.id === current));
+  const pick = (id: number) => { store("ftn.course", String(id)); location.reload(); };
+  return (
+    <div className="relative inline-block">
+      <button onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open} disabled={cs.length < 2}
+        className="inline-flex items-center gap-1.5 rounded-full border border-pink-300/30 px-3 py-1 text-sm font-bold text-pink-100 hover:border-pink-300/60 disabled:cursor-default disabled:hover:border-pink-300/30">
+        Cohort {idx + 1}{cs.length > 1 && <span aria-hidden="true">▾</span>}</button>
+      {open && (
+        <ul role="listbox" style={{ position: "absolute" }} className="glass left-0 top-full z-30 mt-1.5 min-w-[220px] p-1.5">
+          {cs.map((c, i) => (
+            <li key={c.id}><button role="option" aria-selected={c.id === current} onClick={() => pick(c.id)}
+              className={cn("w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-pink-500/15", c.id === current && "text-pink-300")}>
+              Cohort {i + 1} <span className="text-pink-200/60">· {c.title}</span></button></li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

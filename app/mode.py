@@ -3,11 +3,17 @@
 FASTTRACK_DATA=demo  only the made-up demo course in data/demo plus labelled sample learners and a
                      sample class. Nothing else is loaded. It is also the default when the database
                      has no course yet (a fresh deploy).
+FASTTRACK_DATA=real  the real course shipped in data/real/staffroom.db (keys and real learners stripped,
+                     sample learners only). On first start it is copied to STAFFROOM_DB.
 FASTTRACK_PUBLIC=1   a public deployment: settings are read-only (keys come from env vars only) and
                      the dev Note button is off.
 """
 
 import os
+import shutil
+from pathlib import Path
+
+REAL_DB = Path(__file__).resolve().parent.parent / "data" / "real" / "staffroom.db"
 
 
 def demo() -> bool:
@@ -18,9 +24,32 @@ def public() -> bool:
     return os.environ.get("FASTTRACK_PUBLIC", "").lower() in ("1", "true", "yes", "on")
 
 
+def real() -> bool:
+    return os.environ.get("FASTTRACK_DATA", "").lower() == "real"
+
+
+def _install_real() -> bool:
+    """Copy the shipped real-course database into place when the configured one has no course yet."""
+    from . import db
+    target = Path(db.db_path())
+    if not REAL_DB.exists() or target.resolve() == REAL_DB.resolve():
+        return False
+    if target.exists() and db.q("SELECT 1 FROM courses LIMIT 1"):
+        return False
+    db.reset_for_tests()                          # close the connection before replacing the file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    for extra in ("-wal", "-shm"):
+        Path(str(target) + extra).unlink(missing_ok=True)
+    shutil.copyfile(REAL_DB, target)
+    db.reset_for_tests()
+    return True
+
+
 def bootstrap() -> dict:
-    """On start-up in demo mode (or on an empty database), load the demo course and sample class."""
+    """On start-up: the real course (FASTTRACK_DATA=real), or the demo course and sample class."""
     from . import db, facilitate
+    if real():
+        return {"seeded": _install_real(), "real": True}
     courses = db.q("SELECT id, title FROM courses")
     if courses and not demo():
         return {"seeded": False}

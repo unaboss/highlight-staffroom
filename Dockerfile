@@ -18,11 +18,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY tools ./tools
 COPY data/demo ./data/demo
+COPY data/real ./data/real
 COPY --from=web /web/dist ./web/dist
 
 # Public demo by default: only the made-up demo course, read-only settings, no Note button.
 # Mount a volume at /data to keep the database between restarts.
-ENV FASTTRACK_DATA=demo FASTTRACK_PUBLIC=1 FASTTRACK_PUBLIC_AI=1 STAFFROOM_DB=/data/staffroom.db PORT=8000
+ENV FASTTRACK_DATA=real FASTTRACK_PUBLIC=1 FASTTRACK_PUBLIC_AI=1 STAFFROOM_DB=/data/staffroom.db PORT=8000
 RUN mkdir -p /data
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

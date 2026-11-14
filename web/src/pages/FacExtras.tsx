@@ -153,17 +153,14 @@ export function TrackSummary({ data }: { data: Summary }) {
   const n = (s: Status) => data.tracks.filter((t) => t.status === s).length;
   const tiles: [Status, string][] = [["ok", "on track"], ["risk", "at risk"], ["late", "behind"]];
   return (
-    <div className="glass grid gap-4 p-5">
-      <div className="grid grid-cols-3 gap-2.5">
+    <div className="glass flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div className="flex gap-4">
         {tiles.map(([s, l]) => (
-          <a key={s} href="#/learners" className="rounded-xl border border-pink-300/10 bg-white/[.03] px-3 py-3 text-center hover:border-pink-300/40">
-            <b className="stat block">{n(s)}</b><span className="text-label text-pink-200/70">{l}</span></a>
+          <a key={s} href="#/learners" className="text-center hover:text-pink-200"><b className="block font-mono text-[22px] leading-none">{n(s)}</b><span className="text-label text-pink-200/70">{l}</span></a>
         ))}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <a href="#/learners" className="ml-auto inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 px-4 py-2 text-sm font-semibold text-white">
-          View student plans{Icon.arrow}</a>
-      </div>
+      <a href="#/learners" className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 px-4 py-2 text-sm font-semibold text-white">
+        View student plans{Icon.arrow}</a>
     </div>
   );
 }

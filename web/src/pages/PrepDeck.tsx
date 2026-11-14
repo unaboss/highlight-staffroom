@@ -24,7 +24,8 @@ export default function PrepDeck({ lesson, res, prep, onReload }: { lesson: Prep
   const [answers, setAnswers] = useState(false);
   const [modal, setModal] = useState<"" | "image" | "notes">("");
   const [busy, setBusy] = useState(false);
-  const [live, setLive] = useState(false);     // watch the plan being written, caught and fixed
+  const [live, setLive] = useState(false);
+  const [drafted, setDrafted] = useState(false);   // the live run finished: show "Review lesson plan"     // watch the plan being written, caught and fixed
   const [approving, setApproving] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -58,8 +59,21 @@ export default function PrepDeck({ lesson, res, prep, onReload }: { lesson: Prep
 
   if (live) return (
     <div className="grid gap-3">
-      <AgentRun lessonId={lesson.id} autoStart onDone={() => onReload()} />
-      <div><button onClick={() => { setLive(false); onReload(); }} className="rounded-full border border-pink-300/30 px-4 py-2 text-sm font-semibold hover:border-pink-300/60">Back to the deck</button></div>
+      <div className="relative">
+        <AgentRun lessonId={lesson.id} autoStart onDone={() => setDrafted(true)} />
+        {/* once the plan is written and checked: shade it and offer the review (dev note 55) */}
+        {drafted && (
+          <div className="absolute inset-0 grid place-items-center rounded-2xl bg-[#0c0b0e]/60 backdrop-blur-[3px]">
+            <div className="grid justify-items-center gap-3 text-center">
+              <button onClick={() => { setLive(false); setDrafted(false); onReload(); }} autoFocus
+                className="rounded-full bg-gradient-to-br from-pink-500 to-pink-600 px-8 py-4 text-lg font-bold text-white shadow-[0_18px_50px_-12px_rgba(230,25,127,.85)] hover:brightness-110">
+                Review lesson plan</button>
+              <span className="text-sm text-pink-100/80">Edit the slides, add from the notes, add pictures, approve.</span>
+            </div>
+          </div>
+        )}
+      </div>
+      <div><button onClick={() => { setLive(false); setDrafted(false); onReload(); }} className="rounded-full border border-pink-300/30 px-4 py-2 text-sm font-semibold hover:border-pink-300/60">Back to the deck</button></div>
     </div>
   );
   if (!res) return <div className="glass p-5 text-pink-200/70">Opening the deck…</div>;

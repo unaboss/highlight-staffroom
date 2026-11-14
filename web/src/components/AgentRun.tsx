@@ -211,37 +211,40 @@ function Badge({ caught, fixed }: { caught: number; fixed: number }) {
 function Cited({ text }: { text: string }) {
   const parts = text.split(/(\[P\d+\])/g).filter(Boolean);
   return <>{parts.map((p, i) => /^\[P\d+\]$/.test(p)
-    ? <span key={i} className="ml-1 rounded bg-pink-500/20 px-1.5 py-0.5 align-[1px] font-mono text-[11px] text-pink-200">{p.slice(1, -1)}</span>
+    ? <span key={i} className="ml-1 rounded bg-pink-100 px-1.5 py-0.5 align-[1px] font-mono text-[11px] font-semibold text-pink-700">{p.slice(1, -1)}</span>
     : <span key={i}>{p}</span>)}</>;
 }
 
 function PlanDoc({ st, running, phase }: { st: RunState; running: boolean; phase: string }) {
   const reduceMotion = useReducedMotion();
+  const doc = useRef<HTMLElement>(null);
+  // a fixed-height page: while the staff write, it follows the newest line; afterwards you scroll it
+  useEffect(() => { if (running && doc.current) doc.current.scrollTo({ top: doc.current.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" }); }, [st.lines.length, running, reduceMotion]);
   const groups = ["objective", "explanation", "example", "question"].map((k) => [k, st.lines.filter((l) => l.section === k)] as const).filter(([, ls]) => ls.length);
   return (
-    <article className="min-h-[320px] rounded-xl border border-pink-300/15 bg-black/30 p-4 md:p-5" aria-label="Lesson plan draft">
-      <h3 className="mb-3 text-[15px] font-semibold text-pink-50">{st.result?.plan?.title || "Lesson plan"}</h3>
+    <article ref={doc} className="h-[62svh] min-h-[320px] overflow-y-auto overscroll-contain rounded-xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-[0_20px_50px_-24px_rgba(0,0,0,.6)] md:p-5" aria-label="Lesson plan draft">
+      <h3 className="mb-3 text-[15px] font-semibold text-zinc-900">{st.result?.plan?.title || "Lesson plan"}</h3>
       {!st.lines.length && (phase === "idle"
-        ? <p className="text-sm text-pink-200/60">Press <b>Prepare the lesson</b> to watch the staff write the next plan.</p>
-        : running ? <p className="text-sm text-pink-200/60">The Librarian is finding the passages for this lesson…</p> : null)}
+        ? <p className="text-sm text-zinc-500">Press <b>Prepare the lesson</b> to watch the staff write the next plan.</p>
+        : running ? <p className="text-sm text-zinc-500">The Librarian is finding the passages for this lesson…</p> : null)}
       <div className="grid gap-4">
         {groups.map(([k, ls]) => (
           <div key={k}>
-            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-pink-300/70">{SECTION[k] || k}</div>
+            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-pink-700">{SECTION[k] || k}</div>
             <ul className="grid gap-1.5">
               <AnimatePresence initial={false}>
                 {ls.map((l) => (
                   <motion.li key={l.id} layout={!reduceMotion}
                     initial={reduceMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
                     className={cn("rounded-lg border px-3 py-2 text-[14px] leading-relaxed transition-colors duration-300",
-                      l.state === "caught" || l.state === "sent" || l.state === "still" ? "border-red-400/60 bg-red-500/10" :
-                      l.state === "fixed" ? "border-emerald-400/50 bg-emerald-500/10" :
-                      l.state === "fixing" ? "border-amber-300/50 bg-amber-400/10" :
-                      l.state === "removed" ? "border-pink-300/10 opacity-50 line-through" : "border-transparent bg-white/[.02]")}>
+                      l.state === "caught" || l.state === "sent" || l.state === "still" ? "border-red-300 bg-red-50" :
+                      l.state === "fixed" ? "border-emerald-300 bg-emerald-50" :
+                      l.state === "fixing" ? "border-amber-300 bg-amber-50" :
+                      l.state === "removed" ? "border-zinc-200 opacity-50 line-through" : "border-transparent bg-zinc-50")}>
                     {l.before && l.after ? (
                       <div className="grid gap-1">
-                        <div className="text-red-200/70 line-through decoration-red-400/60"><Cited text={l.before} /></div>
-                        <div className="flex gap-2"><span aria-hidden className="text-pink-300/60">→</span><span className="text-pink-50"><Cited text={l.after} /></span></div>
+                        <div className="text-red-700/80 line-through decoration-red-500/70"><Cited text={l.before} /></div>
+                        <div className="flex gap-2"><span aria-hidden className="text-pink-600">→</span><span className="text-zinc-900"><Cited text={l.after} /></span></div>
                       </div>
                     ) : <Cited text={l.text} />}
                     <LineNote l={l} />
@@ -258,12 +261,12 @@ function PlanDoc({ st, running, phase }: { st: RunState; running: boolean; phase
 
 function LineNote({ l }: { l: Line }) {
   const tag = (cls: string, children: ReactNode) => <div className={cn("mt-1 text-xs", cls)}>{children}</div>;
-  if (l.state === "caught") return tag("text-red-300", <>Examiner: {l.reason}</>);
-  if (l.state === "sent") return tag("text-red-300", <>Sent back to the Subject Teacher. {l.reason}</>);
-  if (l.state === "fixing") return tag("text-amber-200", "Rewritten from the cited passage. Re-checking…");
-  if (l.state === "fixed") return tag("text-emerald-300", <>✓ Re-checked: supported{l.grounding != null ? ` (${Math.round(l.grounding * 100)}% grounded)` : ""}</>);
-  if (l.state === "still") return tag("text-red-300", <>Still not supported: {l.reason}</>);
-  if (l.state === "ok") return tag("text-emerald-300/70", "✓ supported");
+  if (l.state === "caught") return tag("text-red-700", <>Examiner: {l.reason}</>);
+  if (l.state === "sent") return tag("text-red-700", <>Sent back to the Subject Teacher. {l.reason}</>);
+  if (l.state === "fixing") return tag("text-amber-700", "Rewritten from the cited passage. Re-checking…");
+  if (l.state === "fixed") return tag("text-emerald-700", <>✓ Re-checked: supported{l.grounding != null ? ` (${Math.round(l.grounding * 100)}% grounded)` : ""}</>);
+  if (l.state === "still") return tag("text-red-700", <>Still not supported: {l.reason}</>);
+  if (l.state === "ok") return tag("text-emerald-700/80", "✓ supported");
   return null;
 }
 

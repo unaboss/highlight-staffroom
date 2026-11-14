@@ -22,6 +22,12 @@ subagents report; mount AgentRun on View plan's prepare action; rebuild the squa
 
 **Blocked:** nothing. Never commit `data/melsoft/`, `dev-notes/`, `screenshots/`, `.env`, `.claude/` or the database.
 
+## Deploying with the real course (not the demo)
+
+1. On the laptop: `python -m tools.export_course_db --out <a folder outside every repo>/cft-course-data.zip` (keys, real learners and logs are stripped). Never commit it.
+2. On the host: copy `staffroom.db` from the zip to the data volume as `/data/staffroom.db`.
+3. Set `FASTTRACK_DATA=real` (keep `FASTTRACK_PUBLIC=1`, `FASTTRACK_PUBLIC_AI=1`, and the key as a host secret) and restart.
+
 ## Adding a page
 
 Pages live in `web/src/pages/`, and all routes are decided in one place: the route chain at the bottom of

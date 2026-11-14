@@ -6,6 +6,7 @@
 web/dist
 data/*
 !data/demo
+!data/real
 dev-notes
 screenshots
 tests
@@ -13,3 +14,4 @@ tests
 .env.*
 !.env.example
 *.db
+!data/real/staffroom.db

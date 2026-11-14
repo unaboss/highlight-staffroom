@@ -12,7 +12,7 @@ services:
     autoDeploy: true
     envVars:
       - key: FASTTRACK_DATA
-        value: demo
+        value: real
       - key: FASTTRACK_PUBLIC
         value: "1"
       - key: FASTTRACK_PUBLIC_AI

@@ -655,3 +655,17 @@ def test_public_notes_keep_at_most_200(tmp_path, monkeypatch):
     made = [devnotes.create({"note": f"n{i}"}, "1.2.3.4")["id"] for i in range(5)]
     kept = sorted(int(f.name) for f in (tmp_path / "pn").iterdir())
     assert kept == made[-3:]                                                      # the oldest go first
+
+
+def test_real_mode_installs_the_shipped_course(tmp_path, monkeypatch):
+    from app import db, mode
+    if not mode.REAL_DB.exists():
+        import pytest
+        pytest.skip("no shipped real course")
+    monkeypatch.setenv("FASTTRACK_DATA", "real")
+    monkeypatch.setenv("STAFFROOM_DB", str(tmp_path / "live.db"))
+    db.reset_for_tests()
+    assert mode.bootstrap()["seeded"] is True
+    assert db.q("SELECT COUNT(*) AS n FROM courses")[0]["n"] >= 1
+    assert db.q("SELECT COUNT(*) AS n FROM settings")[0]["n"] == 0          # no keys shipped
+    assert mode.bootstrap()["seeded"] is False                                # runs once
