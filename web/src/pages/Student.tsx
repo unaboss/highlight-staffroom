@@ -242,7 +242,7 @@ function Tower({ c, data, learner, reload }: { c: Chapter; data: Data; learner: 
   if (result) return <Result r={result} skills={data.skills} onNext={(n) => start(n)} onAgain={() => start(result.level, true)} onTower={() => setResult(null)} />;
 
   const rungs = [];
-  for (let n = QUIZ; n >= 1; n--) {
+  for (let n = 1; n <= QUIZ; n++) {          // Floor 1 first, going up, then the final quiz
     const k = SKILL[data.skills[n]] || "quiz", col = HUE[k], unlocked = n <= open, done = n === QUIZ ? quiz : lv[n]?.passed, now = n === open && !done;
     rungs.push(
       <div key={n} className={cn("grid grid-cols-[40px_1fr_auto] items-center gap-3 rounded-2xl border px-3.5 py-3 transition", now ? "bg-pink-500/5" : "border-pink-300/10 bg-white/[.03]", !unlocked && "opacity-40")}

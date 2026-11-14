@@ -99,21 +99,23 @@ export default function Facilitator() {
         </div>
       </motion.section>
 
-      {/* 2. The hero continues: covered so far first, then the next lesson beside the exam runway (dev note 47) */}
-        <motion.div {...rise(1)} className="mt-6 min-w-0">
+      {/* 2. Hero: covered so far on the left, the next lesson on the right, the exam runway below */}
+      <section className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <motion.div {...rise(1)} className="min-w-0">
           <Head title="Covered so far" compact lede={fac.stopped
             ? `Last lesson stopped at ${splitTitle(fac.stopped.chapter).mod} ${splitTitle(fac.stopped.chapter).kt}${fac.stopped.section ? ` · ${fac.stopped.section}` : ""}${fac.stopped.finished ? " (chapter finished)" : ""}${fac.stopped.date ? ` on ${fmtDate(fac.stopped.date)}` : ""}.`
             : "Nothing taught yet. Record where today's class stopped on the next lesson, and the pin moves here."} />
-          <div className="glass p-2.5"><RouteMap st={st} board={board} stopped={fac.stopped} /></div>
+          <div className="glass p-2.5 [&_svg]:mx-auto [&_svg]:max-h-[46svh] [&_svg]:w-auto [&_svg]:max-w-full"><RouteMap st={st} board={board} stopped={fac.stopped} /></div>
           <a href="#/class/progress"
             className="mt-3 inline-flex items-center gap-2 rounded-full border border-pink-300/40 px-4 py-2 text-sm font-semibold text-pink-100 hover:border-pink-300/70 hover:bg-pink-500/10">
             Show progress{Icon.arrow}</a>
         </motion.div>
-      <section className="mt-6 grid gap-5 lg:grid-cols-[1fr_1.1fr]">
         <motion.div {...rise(2)} className="min-w-0">
           <Head title="Next lesson" compact lede={next ? `${fmtDate(nextDate)} · ${nextLabel}` : "Nothing planned"} />
           <NextLesson lesson={plan} busy={busy} onPrepare={prepare} next={fac.next} onChanged={() => load()} />
         </motion.div>
+      </section>
+      <section className="mt-6 grid grid-cols-[minmax(0,1fr)]">
         <motion.div {...rise(3)} className="min-w-0">
           <Head title="Exam runway" compact lede={`One tile per lesson; the flag is the exam. ${p.taught} taught · ${p.lessons_left} to go.`} />
           <div className="glass p-5">
@@ -285,7 +287,7 @@ function NextLesson(props: { lesson: any; busy: boolean; onPrepare: (id: number)
   return (
     <div className="grid gap-3">
       <div className="glass flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-[1_1_12rem]">
           <b className="block truncate text-body">{splitTitle(lesson.title).name}</b>
           <span className="text-label text-pink-200/70">{next?.continues_from ? `Picks up from ${next.continues_from} · ` : ""}{state}</span>
         </div>

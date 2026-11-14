@@ -93,7 +93,7 @@ export default function App() {
           </button>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1184px] px-5 pb-24 pt-8 md:px-8 md:pt-12">
+      <main className={"mx-auto w-full pb-24 pt-8 md:pt-12 " + (page === "class" && !sub[0] ? "max-w-none px-4 md:px-6" : "max-w-[1184px] px-5 md:px-8")}>
         {atSettings ? <Settings /> : agents ? <AgentRun key={sub[1] || "new"} jobId={Number(sub[1]) || undefined} lessonId={Number(new URLSearchParams(location.search).get("lesson")) || undefined} /> : prep ? <LessonPrep lessonId={Number(sub[1]) || undefined} /> : progress ? <Progress /> : classes ? <ReviewClasses sessionId={Number(sub[1]) || undefined} /> : page === "class" ? <Facilitator /> : page === "learners" ? <Learners id={Number(hash.split("/")[2]) || undefined} /> : <Student sub={hash.replace(/^#\/?/, "").split("/").slice(1)} />}
       </main>
     </>
