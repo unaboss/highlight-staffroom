@@ -827,16 +827,30 @@ def api_deck_passages(lid: int):
             for p in _chapter_passages(l["course_id"], l["chapter"])]
 
 
-def _no_web_images() -> None:
-    """The public demo never fetches from the internet on a visitor's behalf."""
+_IMG_HITS: dict[str, list[float]] = {}
+
+
+def _no_web_images(request: Request | None = None) -> None:
+    """The public demo only fetches pictures when FASTTRACK_PUBLIC_IMAGES=1, and then at most
+    FASTTRACK_IMAGES_PER_IP_HOUR (default 120) Wikimedia calls per visitor per hour."""
+    import os
+    import time
     from . import mode
-    if mode.public():
+    if not mode.public():
+        return
+    if os.environ.get("FASTTRACK_PUBLIC_IMAGES") != "1":
         raise HTTPException(403, "Image search is off on the public demo. Run Classroom Fast Track yourself to add images.")
+    ip = request.client.host if request and request.client else "?"
+    now = time.time()
+    hits = [t for t in _IMG_HITS.get(ip, []) if now - t < 3600]
+    if len(hits) >= int(os.environ.get("FASTTRACK_IMAGES_PER_IP_HOUR", "120")):
+        raise HTTPException(429, "That's the picture limit for this hour on the public demo. Try again later.")
+    _IMG_HITS[ip] = hits + [now]
 
 
 @router.get("/api/prep/images")
 def api_images(request: Request, q: str = ""):
-    _no_web_images()
+    _no_web_images(request)
     try:
         return {"results": search_images(q, _contact(request)), "source": "Wikimedia Commons"}
     except httpx.HTTPError:
@@ -845,7 +859,7 @@ def api_images(request: Request, q: str = ""):
 
 @router.post("/api/prep/images")
 def api_image_save(request: Request, title: str = Body(..., embed=True)):
-    _no_web_images()
+    _no_web_images(request)
     try:
         return save_image(title, _contact(request))
     except httpx.HTTPError:

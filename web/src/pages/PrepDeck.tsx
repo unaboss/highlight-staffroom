@@ -28,6 +28,7 @@ export default function PrepDeck({ lesson, res, prep, onReload }: { lesson: Prep
   const [drafted, setDrafted] = useState(false);
   const [picBusy, setPicBusy] = useState("");      // Add pictures progress   // the live run finished: show "Review lesson plan"     // watch the plan being written, caught and fixed
   const [approving, setApproving] = useState(false);
+  const [counsel, setCounsel] = useState(false);   // Counsellor popup before the re-draft (dev note 66)
   const panel = useRef<HTMLDivElement>(null);
   const timer = useRef<number | undefined>(undefined);
 
@@ -162,13 +163,14 @@ export default function PrepDeck({ lesson, res, prep, onReload }: { lesson: Prep
         const missed = cov.sections.filter((x, i) => i <= upto && x.state !== "covered").length;
         if (!missed && cov.pct >= 100) return null;
         return (
-          <button onClick={() => setLive(true)} className="no-print flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/60 bg-amber-400/10 px-4 py-3 text-left hover:bg-amber-400/15">
+          <button onClick={() => setCounsel(true)} className="no-print flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/60 bg-amber-400/10 px-4 py-3 text-left hover:bg-amber-400/15">
             <span><b className="block text-amber-100">Update required: previous lesson plan not complete</b>
               <span className="text-sm text-amber-100/80">The last class stopped at {tidy(cov.furthest || "")}{missed ? ` and missed ${missed} part${missed > 1 ? "s" : ""}` : ""}. Re-draft the plan to catch up first, then the new content.</span></span>
             <span className="rounded-full bg-amber-300 px-4 py-2 text-sm font-bold text-[#1a1206]">Update the plan</span>
           </button>
         );
       })()}
+      {counsel && <CounsellorPopup prep={prep} onClose={() => setCounsel(false)} onApprove={() => { setCounsel(false); setLive(true); }} />}
       {/* toolbar */}
       <div className="no-print flex flex-wrap items-center gap-2">
         <button onClick={autoPictures} disabled={!!picBusy} title="Find an openly licensed picture for each slide"
@@ -572,4 +574,44 @@ function PrintBundle({ deck, prep, lesson }: { deck: Deck; prep: Prep; lesson: P
       </section>
     </div>
   );
+}
+
+
+/* Counsellor popup (dev note 66): explains the recalculated plan before the re-draft,
+   and leaves the teacher to approve it or keep the current plan. */
+function CounsellorPopup({ prep, onClose, onApprove }: { prep: Prep; onClose: () => void; onApprove: () => void }) {
+  const cov = prep.coverage;
+  const upto = cov ? cov.sections.findIndex((x) => x.name === cov.furthest) : -1;
+  const missed = cov ? cov.sections.filter((x, i) => i <= upto && x.state !== "covered") : [];
+  const fresh = (prep.lesson?.sections ?? []).filter((n) => !missed.some((m) => m.name === n));
+  const total = Math.max(1, prep.lesson?.sections.length || cov?.sections.length || 1);
+  const per = Math.max(5, Math.round((prep.lesson?.minutes || 60) / total));
+  const added = missed.length * per;
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    addEventListener("keydown", k); return () => removeEventListener("keydown", k);
+  }, [onClose]);
+  const line = (who: string, body: ReactNode) => (
+    <div className="grid gap-1"><span className="text-xs font-semibold uppercase tracking-wide text-amber-200/70">{who}</span>
+      <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-white/5 px-4 py-3 text-sm leading-relaxed">{body}</div></div>
+  );
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label="Counsellor" className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="grid max-h-[90vh] w-full max-w-xl gap-4 overflow-y-auto rounded-3xl border border-amber-300/30 bg-[#141217] p-6 text-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between"><b className="text-lg">Counsellor</b>
+          <button onClick={onClose} aria-label="Close" className="rounded-full px-3 py-1 text-white/60 hover:bg-white/10">✕</button></div>
+        {line("Counsellor", <>The last class stopped at <b>{tidy(cov?.furthest || "the start")}</b>{cov ? ` with ${cov.pct}% of the plan covered` : ""}.</>)}
+        {line("Counsellor", missed.length
+          ? <>It missed {missed.length} part{missed.length > 1 ? "s" : ""}:<ul className="mt-1 list-disc pl-5">{missed.map((m) => <li key={m.name}>{tidy(m.name)}{m.state === "touched" ? " (only touched)" : ""}</li>)}</ul></>
+          : <>Nothing was skipped, but the rest of the plan was not reached.</>)}
+        {line("Counsellor", <>New order: <b>catch up first</b>{missed.length ? ` (${missed.map((m) => tidy(m.name)).join(", ")})` : ""}, then the new content{fresh.length ? ` (${fresh.map((n) => tidy(n)).join(", ")})` : ""}.</>)}
+        {line("Counsellor", added
+          ? <>That adds about <b>{added} minutes</b>. I will tighten the new sections so the timeline still holds, and flag it if it cannot.</>
+          : <>No extra time is needed: the timeline is still on track.</>)}
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
+          <button onClick={onClose} className="rounded-full border border-white/20 px-5 py-2 text-sm font-semibold hover:bg-white/10">Keep the current plan</button>
+          <button onClick={onApprove} autoFocus className="rounded-full bg-amber-300 px-5 py-2 text-sm font-bold text-[#1a1206] hover:brightness-110">Approve and update the plan</button>
+        </div>
+      </div>
+    </div>, document.body);
 }
